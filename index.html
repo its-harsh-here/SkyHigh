@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aviation Weather Briefing System</title>
+    <title>Enhanced Aviation Weather Briefing System</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --primary-blue: #1e3a8a;
@@ -42,7 +43,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 0 1rem;
         }
@@ -71,7 +72,7 @@
             padding: 2rem 0;
         }
 
-        .search-section {
+        .flight-plan-section {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
@@ -79,11 +80,11 @@
             margin-bottom: 2rem;
         }
 
-        .search-controls {
+        .flight-plan-grid {
             display: grid;
-            grid-template-columns: 1fr auto auto;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1rem;
-            align-items: end;
+            margin-bottom: 1rem;
         }
 
         .form-group {
@@ -94,7 +95,7 @@
         label {
             font-weight: 600;
             margin-bottom: 0.5rem;
-            color: var(--gray-700);
+            color: var(--gray-800);
         }
 
         .form-control {
@@ -131,173 +132,138 @@
             transform: translateY(-1px);
         }
 
-        .btn-secondary {
-            background: var(--gray-200);
-            color: var(--gray-800);
-        }
-
-        .btn-secondary:hover {
-            background: var(--gray-300);
-        }
-
-        .flight-plan-section {
+        .timeline-section {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             padding: 1.5rem;
             margin-bottom: 2rem;
+            display: none;
         }
 
-        .flight-plan-grid {
+        .timeline-container {
+            position: relative;
+            margin: 2rem 0;
+        }
+
+        .timeline-chart {
+            height: 400px;
+            margin-bottom: 2rem;
+        }
+
+        .timeline-details {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1rem;
-            margin-bottom: 1rem;
         }
 
-        .weather-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 1.5rem;
-        }
-
-        .weather-card {
-            background: white;
-            border-radius: 0.75rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .weather-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
-        }
-
-        .weather-card-header {
-            padding: 1rem 1.5rem;
+        .timeline-item {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid var(--gray-200);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border-left: 4px solid;
         }
 
-        .airport-info h3 {
-            font-size: 1.25rem;
-            font-weight: 700;
+        .timeline-item.clear {
+            background: #f0f9ff;
+            border-color: var(--success-green);
+        }
+
+        .timeline-item.significant {
+            background: #fffbeb;
+            border-color: var(--warning-yellow);
+        }
+
+        .timeline-item.severe {
+            background: #fef2f2;
+            border-color: var(--danger-red);
+        }
+
+        .timeline-time {
+            min-width: 120px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .timeline-location {
+            min-width: 200px;
+            color: var(--gray-600);
+            font-size: 0.9rem;
+        }
+
+        .timeline-conditions {
+            flex: 1;
+            margin-left: 1rem;
+        }
+
+        .timeline-conditions h4 {
+            margin-bottom: 0.25rem;
+            font-size: 1rem;
+        }
+
+        .timeline-conditions p {
+            font-size: 0.85rem;
+            color: var(--gray-600);
             margin-bottom: 0.25rem;
         }
 
-        .airport-code {
-            font-size: 0.875rem;
-            color: var(--gray-600);
-        }
-
-        .category-badge {
-            padding: 0.375rem 0.75rem;
-            border-radius: 9999px;
+        .severity-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
             font-size: 0.75rem;
-            font-weight: 700;
+            font-weight: 600;
             text-transform: uppercase;
         }
 
-        .category-clear {
+        .severity-clear {
             background: var(--light-blue);
             color: var(--primary-blue);
         }
 
-        .category-significant {
+        .severity-significant {
             background: #fef3c7;
             color: #d97706;
         }
 
-        .category-severe {
+        .severity-severe {
             background: #fee2e2;
             color: #dc2626;
         }
 
-        .weather-details {
-            padding: 1.5rem;
-        }
-
         .weather-summary {
-            margin-bottom: 1.5rem;
-        }
-
-        .weather-summary p {
-            margin-bottom: 0.5rem;
-            font-size: 0.95rem;
-        }
-
-        .weather-params {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .param-group {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .param-label {
-            font-size: 0.75rem;
-            color: var(--gray-600);
-            text-transform: uppercase;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-
-        .param-value {
-            font-weight: 600;
-            font-size: 1.1rem;
-        }
-
-        .expand-btn {
-            width: 100%;
-            padding: 0.75rem;
-            background: var(--gray-100);
-            border: none;
-            border-top: 1px solid var(--gray-200);
-            cursor: pointer;
-            font-weight: 600;
-            color: var(--gray-700);
-            transition: background-color 0.3s ease;
-        }
-
-        .expand-btn:hover {
-            background: var(--gray-200);
-        }
-
-        .detailed-data {
-            display: none;
-            padding: 1rem;
-            background: var(--gray-50);
-            border-top: 1px solid var(--gray-200);
-        }
-
-        .detailed-data.show {
-            display: block;
-        }
-
-        .raw-metar {
-            background: var(--gray-800);
-            color: white;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            font-family: 'Courier New', monospace;
-            font-size: 0.875rem;
-            word-break: break-all;
-            margin-bottom: 1rem;
-        }
-
-        .route-summary {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             padding: 1.5rem;
             margin-bottom: 2rem;
+            display: none;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .summary-item {
+            text-align: center;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background: var(--gray-50);
+        }
+
+        .summary-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--secondary-blue);
+        }
+
+        .summary-label {
+            font-size: 0.875rem;
+            color: var(--gray-600);
+            text-transform: uppercase;
+            font-weight: 600;
         }
 
         .loading {
@@ -322,28 +288,49 @@
             margin-bottom: 1rem;
         }
 
-        .legend {
+        .route-overview {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             padding: 1.5rem;
             margin-bottom: 2rem;
+            display: none;
         }
 
-        .legend-grid {
+        .route-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .route-stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 1rem;
         }
 
-        .legend-item {
+        .stat-item {
+            text-align: center;
             padding: 0.75rem;
-            border-radius: 0.5rem;
             background: var(--gray-50);
+            border-radius: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--secondary-blue);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--gray-600);
+            text-transform: uppercase;
         }
 
         @media (max-width: 768px) {
-            .search-controls {
+            .flight-plan-grid {
                 grid-template-columns: 1fr;
             }
             
@@ -352,12 +339,14 @@
                 gap: 1rem;
             }
             
-            .weather-grid {
-                grid-template-columns: 1fr;
+            .timeline-item {
+                flex-direction: column;
+                align-items: flex-start;
             }
             
-            .flight-plan-grid {
-                grid-template-columns: 1fr;
+            .timeline-location {
+                min-width: auto;
+                margin-bottom: 0.5rem;
             }
         }
     </style>
@@ -367,7 +356,7 @@
     <header class="header">
         <div class="container">
             <div class="header-content">
-                <h1>✈️ Aviation Weather Briefing System</h1>
+                <h1>✈️ Enhanced Aviation Weather Briefing</h1>
                 <div class="utc-time">
                     UTC: <span id="utc-clock">--:--:--</span>
                 </div>
@@ -379,107 +368,145 @@
     <main class="main-content">
         <div class="container">
             
-            <!-- Individual Airport Search -->
-            <section class="search-section">
-                <h2 style="margin-bottom: 1rem;">Individual Airport Weather</h2>
-                <div class="search-controls">
-                    <div class="form-group">
-                        <label for="airports">Airport ICAO Codes (comma separated)</label>
-                        <input type="text" id="airports" class="form-control" 
-                               placeholder="e.g., KJFK, KORD, EGLL" 
-                               value="KJFK, KORD, KDEN">
-                    </div>
-                    <button id="search-btn" class="btn btn-primary">Get Weather</button>
-                    <button id="clear-btn" class="btn btn-secondary">Clear</button>
-                </div>
-            </section>
-
-            <!-- Flight Plan Section -->
+            <!-- Flight Plan Input -->
             <section class="flight-plan-section">
-                <h2 style="margin-bottom: 1rem;">Flight Plan Weather Analysis</h2>
+                <h2 style="margin-bottom: 1rem;">🛩️ Comprehensive Flight Weather Analysis</h2>
                 <div class="flight-plan-grid">
                     <div class="form-group">
-                        <label for="departure">Departure Airport</label>
+                        <label for="departure">Departure Airport *</label>
                         <input type="text" id="departure" class="form-control" 
-                               placeholder="e.g., KJFK" maxlength="4">
+                               placeholder="e.g., KJFK" maxlength="4" value="KJFK">
                     </div>
                     <div class="form-group">
-                        <label for="destination">Destination Airport</label>
+                        <label for="destination">Destination Airport *</label>
                         <input type="text" id="destination" class="form-control" 
-                               placeholder="e.g., KLAX" maxlength="4">
+                               placeholder="e.g., KLAX" maxlength="4" value="KLAX">
                     </div>
                     <div class="form-group">
-                        <label for="waypoints">Waypoints (comma separated)</label>
+                        <label for="waypoints">Waypoints</label>
                         <input type="text" id="waypoints" class="form-control" 
-                               placeholder="e.g., KORD, KDEN">
+                               placeholder="e.g., KORD, KDEN (comma separated)" value="KORD, KDEN">
                     </div>
-                    <button id="flight-plan-btn" class="btn btn-primary">Analyze Flight Plan</button>
+                    <div class="form-group">
+                        <label for="cruise-speed">Cruise Speed (knots)</label>
+                        <input type="number" id="cruise-speed" class="form-control" 
+                               value="450" min="100" max="900">
+                    </div>
+                    <div class="form-group">
+                        <label for="departure-time">Departure Time (UTC)</label>
+                        <input type="datetime-local" id="departure-time" class="form-control">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: end;">
+                        <button id="analyze-btn" class="btn btn-primary">Analyze Weather Timeline</button>
+                    </div>
                 </div>
-            </section>
-
-            <!-- Route Summary (Hidden initially) -->
-            <section id="route-summary" class="route-summary" style="display: none;">
-                <h2>Flight Route Weather Summary</h2>
-                <div id="route-details"></div>
             </section>
 
             <!-- Loading/Error States -->
             <div id="loading" class="loading" style="display: none;">
-                <p>🔄 Fetching weather data...</p>
+                <p>🔄 Analyzing comprehensive weather data...</p>
+                <p style="font-size: 0.9rem; margin-top: 0.5rem;">Fetching METAR, TAF, PIREP, SIGMET, G-AIRMET, and CWA data...</p>
             </div>
             
             <div id="error-message" class="error" style="display: none;"></div>
             <div id="success-message" class="success" style="display: none;"></div>
 
-            <!-- Weather Cards Grid -->
-            <div id="weather-grid" class="weather-grid"></div>
-
-            <!-- Weather Legend -->
-            <section class="legend">
-                <h2 style="margin-bottom: 1rem;">Weather Categories & Codes</h2>
-                <div class="legend-grid">
-                    <div class="legend-item">
-                        <h4 style="color: var(--primary-blue); margin-bottom: 0.5rem;">🟢 Clear</h4>
-                        <p>VFR conditions, visibility >5SM, ceiling >3000ft</p>
+            <!-- Route Overview -->
+            <section id="route-overview" class="route-overview">
+                <div class="route-header">
+                    <h2>📊 Flight Route Overview</h2>
+                    <div id="overall-severity" class="severity-badge"></div>
+                </div>
+                <div class="route-stats">
+                    <div class="stat-item">
+                        <div class="stat-value" id="total-distance">--</div>
+                        <div class="stat-label">Distance (NM)</div>
                     </div>
-                    <div class="legend-item">
-                        <h4 style="color: #d97706; margin-bottom: 0.5rem;">🟡 Significant</h4>
-                        <p>MVFR/IFR conditions, moderate weather, visibility 1-5SM</p>
+                    <div class="stat-item">
+                        <div class="stat-value" id="total-time">--</div>
+                        <div class="stat-label">Flight Time</div>
                     </div>
-                    <div class="legend-item">
-                        <h4 style="color: #dc2626; margin-bottom: 0.5rem;">🔴 Severe</h4>
-                        <p>LIFR conditions, thunderstorms, visibility <1SM</p>
+                    <div class="stat-item">
+                        <div class="stat-value" id="departure-airport">--</div>
+                        <div class="stat-label">Departure</div>
                     </div>
-                    <div class="legend-item">
-                        <h4 style="margin-bottom: 0.5rem;">Common Weather Codes</h4>
-                        <p><strong>RA:</strong> Rain | <strong>SN:</strong> Snow | <strong>TS:</strong> Thunderstorm<br>
-                           <strong>FG:</strong> Fog | <strong>BR:</strong> Mist | <strong>HZ:</strong> Haze</p>
+                    <div class="stat-item">
+                        <div class="stat-value" id="destination-airport">--</div>
+                        <div class="stat-label">Destination</div>
                     </div>
                 </div>
             </section>
+
+            <!-- Weather Data Summary -->
+            <section id="weather-summary" class="weather-summary">
+                <h2 style="margin-bottom: 1rem;">🌦️ Weather Data Sources</h2>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <div class="summary-number" id="metars-count">0</div>
+                        <div class="summary-label">METAR Reports</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-number" id="tafs-count">0</div>
+                        <div class="summary-label">TAF Forecasts</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-number" id="pireps-count">0</div>
+                        <div class="summary-label">Pilot Reports</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-number" id="sigmets-count">0</div>
+                        <div class="summary-label">SIGMETs</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-number" id="gairmets-count">0</div>
+                        <div class="summary-label">G-AIRMETs</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-number" id="cwas-count">0</div>
+                        <div class="summary-label">CWAs</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Timeline Visualization -->
+            <section id="timeline-section" class="timeline-section">
+                <h2 style="margin-bottom: 1rem;">⏰ Flight Weather Timeline</h2>
+                
+                <!-- Chart Container -->
+                <div class="timeline-chart">
+                    <canvas id="timelineChart"></canvas>
+                </div>
+
+                <!-- Detailed Timeline -->
+                <h3 style="margin-bottom: 1rem;">Detailed Weather Conditions</h3>
+                <div id="timeline-details" class="timeline-details"></div>
+            </section>
+
         </div>
     </main>
+
     <script>
         // Application state
-        let currentWeatherData = {};
+        let timelineChart = null;
+        let currentFlightData = {};
 
         // DOM elements
         const utcClock = document.getElementById('utc-clock');
-        const airportsInput = document.getElementById('airports');
-        const searchBtn = document.getElementById('search-btn');
-        const clearBtn = document.getElementById('clear-btn');
-        const loading = document.getElementById('loading');
-        const errorMessage = document.getElementById('error-message');
-        const successMessage = document.getElementById('success-message');
-        const weatherGrid = document.getElementById('weather-grid');
-        
-        // Flight plan elements
         const departureInput = document.getElementById('departure');
         const destinationInput = document.getElementById('destination');
         const waypointsInput = document.getElementById('waypoints');
-        const flightPlanBtn = document.getElementById('flight-plan-btn');
-        const routeSummary = document.getElementById('route-summary');
-        const routeDetails = document.getElementById('route-details');
+        const cruiseSpeedInput = document.getElementById('cruise-speed');
+        const departureTimeInput = document.getElementById('departure-time');
+        const analyzeBtn = document.getElementById('analyze-btn');
+        const loading = document.getElementById('loading');
+        const errorMessage = document.getElementById('error-message');
+        const successMessage = document.getElementById('success-message');
+        
+        // Section elements
+        const routeOverview = document.getElementById('route-overview');
+        const weatherSummary = document.getElementById('weather-summary');
+        const timelineSection = document.getElementById('timeline-section');
+        const timelineDetails = document.getElementById('timeline-details');
 
         // Update UTC clock
         function updateClock() {
@@ -488,6 +515,14 @@
         }
         setInterval(updateClock, 1000);
         updateClock();
+
+        // Set default departure time to current time
+        function setDefaultDepartureTime() {
+            const now = new Date();
+            const utcTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+            departureTimeInput.value = utcTime.toISOString().slice(0, 16);
+        }
+        setDefaultDepartureTime();
 
         // Show/hide UI states
         function showLoading() {
@@ -514,161 +549,13 @@
             errorMessage.style.display = 'none';
         }
 
-        // Format weather data for display
-        function formatWeatherData(data) {
-            if (!data || !data.metar) return null;
-            
-            const metar = data.metar;
-            return {
-                icao: data.icao,
-                name: metar.name || data.icao,
-                category: metar.category || 'Clear',
-                temperature: metar.temp ? `${metar.temp}°C` : 'N/A',
-                dewpoint: metar.dewp ? `${metar.dewp}°C` : 'N/A',
-                wind: metar.wdir && metar.wspd ? `${metar.wdir}°/${metar.wspd}kt` : 'Calm',
-                visibility: metar.visib || 'N/A',
-                weather: metar.wxString || 'Clear',
-                clouds: formatClouds(metar.clouds),
-                altimeter: metar.altim ? `${metar.altim}"` : 'N/A',
-                rawMetar: metar.rawOb || 'No raw data available',
-                lastUpdate: metar.receiptTime || 'N/A'
-            };
-        }
-
-        function formatClouds(clouds) {
-            if (!clouds || clouds.length === 0) return 'Clear';
-            return clouds.map(cloud => 
-                `${cloud.cover}${cloud.base ? cloud.base.toString().padStart(3, '0') : ''}`
-            ).join(' ');
-        }
-
-        // Create weather card HTML
-        function createWeatherCard(weatherData) {
-            const categoryClass = `category-${weatherData.category.toLowerCase()}`;
-            const categoryIcon = weatherData.category === 'Clear' ? '🟢' : 
-                                weatherData.category === 'Significant' ? '🟡' : '🔴';
-
-            return `
-                <div class="weather-card">
-                    <div class="weather-card-header">
-                        <div class="airport-info">
-                            <h3>${weatherData.icao}</h3>
-                            <div class="airport-code">${weatherData.name}</div>
-                        </div>
-                        <div class="category-badge ${categoryClass}">
-                            ${categoryIcon} ${weatherData.category}
-                        </div>
-                    </div>
-                    <div class="weather-details">
-                        <div class="weather-summary">
-                            <p><strong>Current Conditions:</strong> ${weatherData.weather}</p>
-                            <p><strong>Last Update:</strong> ${formatTime(weatherData.lastUpdate)}</p>
-                        </div>
-                        <div class="weather-params">
-                            <div class="param-group">
-                                <div class="param-label">Temperature</div>
-                                <div class="param-value">${weatherData.temperature}</div>
-                            </div>
-                            <div class="param-group">
-                                <div class="param-label">Dew Point</div>
-                                <div class="param-value">${weatherData.dewpoint}</div>
-                            </div>
-                            <div class="param-group">
-                                <div class="param-label">Wind</div>
-                                <div class="param-value">${weatherData.wind}</div>
-                            </div>
-                            <div class="param-group">
-                                <div class="param-label">Visibility</div>
-                                <div class="param-value">${weatherData.visibility}</div>
-                            </div>
-                            <div class="param-group">
-                                <div class="param-label">Clouds</div>
-                                <div class="param-value">${weatherData.clouds}</div>
-                            </div>
-                            <div class="param-group">
-                                <div class="param-label">Altimeter</div>
-                                <div class="param-value">${weatherData.altimeter}</div>
-                            </div>
-                        </div>
-                    </div>
-                    <button class="expand-btn" onclick="toggleDetails('${weatherData.icao}')">
-                        Show Raw METAR
-                    </button>
-                    <div id="details-${weatherData.icao}" class="detailed-data">
-                        <div class="raw-metar">${weatherData.rawMetar}</div>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Toggle detailed view
-        function toggleDetails(icao) {
-            const details = document.getElementById(`details-${icao}`);
-            const button = details.previousElementSibling;
-            
-            if (details.classList.contains('show')) {
-                details.classList.remove('show');
-                button.textContent = 'Show Raw METAR';
-            } else {
-                details.classList.add('show');
-                button.textContent = 'Hide Raw METAR';
-            }
-        }
-
-        // Format time display
-        function formatTime(timeStr) {
-            if (!timeStr) return 'N/A';
-            try {
-                return new Date(timeStr).toLocaleString();
-            } catch {
-                return timeStr;
-            }
-        }
-
-        // Fetch weather data
-        async function fetchWeather(airports) {
-            showLoading();
-            
-            try {
-                const response = await fetch(`/api/weather?airports=${encodeURIComponent(airports.join(','))}`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const data = await response.json();
-                currentWeatherData = data;
-                
-                // Clear previous results
-                weatherGrid.innerHTML = '';
-                
-                // Create cards for each airport
-                let hasData = false;
-                for (const [icao, weatherData] of Object.entries(data)) {
-                    const formattedData = formatWeatherData(weatherData);
-                    if (formattedData) {
-                        weatherGrid.innerHTML += createWeatherCard(formattedData);
-                        hasData = true;
-                    }
-                }
-                
-                if (hasData) {
-                    showSuccess(`Weather data loaded for ${Object.keys(data).length} airport(s)`);
-                } else {
-                    showError('No weather data found for the specified airports');
-                }
-                
-            } catch (error) {
-                console.error('Error fetching weather:', error);
-                showError(`Failed to fetch weather data: ${error.message}`);
-            }
-        }
-
-        // Fetch flight plan weather
-        async function fetchFlightPlanWeather() {
+        // Analyze comprehensive weather timeline
+        async function analyzeWeatherTimeline() {
             const departure = departureInput.value.trim().toUpperCase();
             const destination = destinationInput.value.trim().toUpperCase();
             const waypoints = waypointsInput.value.trim().split(',').map(w => w.trim().toUpperCase()).filter(w => w);
+            const cruiseSpeed = parseInt(cruiseSpeedInput.value) || 450;
+            const departureTime = departureTimeInput.value;
             
             if (!departure || !destination) {
                 showError('Please enter both departure and destination airports');
@@ -678,7 +565,7 @@
             showLoading();
             
             try {
-                const response = await fetch('/api/flight-plan', {
+                const response = await fetch('/api/enhanced-flight-plan', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -686,7 +573,9 @@
                     body: JSON.stringify({
                         departure,
                         destination,
-                        waypoints
+                        waypoints,
+                        cruise_speed: cruiseSpeed,
+                        departure_time: departureTime ? new Date(departureTime).toISOString() : null
                     })
                 });
                 
@@ -695,96 +584,206 @@
                 }
                 
                 const data = await response.json();
+                currentFlightData = data;
                 
-                // Display route summary
-                const overallCategory = data.route.overall_category;
-                const categoryClass = `category-${overallCategory.toLowerCase()}`;
-                const categoryIcon = overallCategory === 'Clear' ? '🟢' : 
-                                   overallCategory === 'Significant' ? '🟡' : '🔴';
+                // Display results
+                displayRouteOverview(data.route);
+                displayWeatherSummary(data.weather_summary);
+                displayTimeline(data.timeline);
                 
-                routeDetails.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h3>Route: ${departure} → ${destination}</h3>
-                        <div class="category-badge ${categoryClass}">
-                            ${categoryIcon} ${overallCategory}
-                        </div>
-                    </div>
-                    ${waypoints.length > 0 ? `<p><strong>Waypoints:</strong> ${waypoints.join(', ')}</p>` : ''}
-                    <p><strong>Overall Assessment:</strong> ${getRouteAssessment(overallCategory)}</p>
-                `;
-                
-                routeSummary.style.display = 'block';
-                
-                // Display individual airport weather
-                currentWeatherData = data.weather;
-                weatherGrid.innerHTML = '';
-                
-                for (const [icao, weatherData] of Object.entries(data.weather)) {
-                    const formattedData = formatWeatherData(weatherData);
-                    if (formattedData) {
-                        weatherGrid.innerHTML += createWeatherCard(formattedData);
-                    }
-                }
-                
-                showSuccess('Flight plan weather analysis completed');
+                showSuccess(`Comprehensive weather analysis completed for ${data.timeline.length} time intervals`);
                 
             } catch (error) {
-                console.error('Error fetching flight plan weather:', error);
-                showError(`Failed to analyze flight plan: ${error.message}`);
+                console.error('Error analyzing weather timeline:', error);
+                showError(`Failed to analyze weather timeline: ${error.message}`);
             }
         }
 
-        function getRouteAssessment(category) {
-            switch (category) {
-                case 'Clear':
-                    return 'Favorable weather conditions along the route. No significant weather hazards expected.';
-                case 'Significant':
-                    return 'Moderate weather conditions present. Monitor weather updates and be prepared for possible route adjustments.';
-                case 'Severe':
-                    return 'Severe weather conditions detected along the route. Consider alternative routing or delaying departure.';
-                default:
-                    return 'Weather assessment unavailable.';
+        function displayRouteOverview(route) {
+            document.getElementById('total-distance').textContent = Math.round(route.total_distance);
+            document.getElementById('total-time').textContent = formatFlightTime(route.total_flight_time);
+            document.getElementById('departure-airport').textContent = route.departure;
+            document.getElementById('destination-airport').textContent = route.destination;
+            
+            const severityBadge = document.getElementById('overall-severity');
+            severityBadge.textContent = route.overall_severity;
+            severityBadge.className = `severity-badge severity-${route.overall_severity.toLowerCase()}`;
+            
+            routeOverview.style.display = 'block';
+        }
+
+        function displayWeatherSummary(summary) {
+            document.getElementById('metars-count').textContent = summary.metars_count;
+            document.getElementById('tafs-count').textContent = summary.tafs_count;
+            document.getElementById('pireps-count').textContent = summary.pireps_count;
+            document.getElementById('sigmets-count').textContent = summary.sigmets_count;
+            document.getElementById('gairmets-count').textContent = summary.gairmets_count;
+            document.getElementById('cwas-count').textContent = summary.cwas_count;
+            
+            weatherSummary.style.display = 'block';
+        }
+
+        function displayTimeline(timeline) {
+            // Create timeline chart
+            createTimelineChart(timeline);
+            
+            // Create detailed timeline items
+            timelineDetails.innerHTML = '';
+            
+            timeline.forEach(item => {
+                const timelineItem = document.createElement('div');
+                timelineItem.className = `timeline-item ${item.severity.toLowerCase()}`;
+                
+                timelineItem.innerHTML = `
+                    <div class="timeline-time">
+                        ${item.start_time_local} - ${item.end_time_local}
+                    </div>
+                    <div class="timeline-location">
+                        ${item.location_description}
+                    </div>
+                    <div class="timeline-conditions">
+                        <h4>${item.conditions.condition} <span class="severity-badge severity-${item.severity.toLowerCase()}">${item.severity}</span></h4>
+                        <p>${item.conditions.description}</p>
+                        ${item.conditions.hazards && item.conditions.hazards.length > 0 ? 
+                          `<p><strong>⚠️ Hazards:</strong> ${item.conditions.hazards.join(', ')}</p>` : ''}
+                        ${item.conditions.pirep_count > 0 ? 
+                          `<p><strong>✈️ Pilot Reports:</strong> ${item.conditions.pirep_count} in area</p>` : ''}
+                        ${item.conditions.nearest_station ? 
+                          `<p><strong>📍 Nearest Station:</strong> ${item.conditions.nearest_station}</p>` : ''}
+                    </div>
+                `;
+                
+                timelineDetails.appendChild(timelineItem);
+            });
+            
+            timelineSection.style.display = 'block';
+        }
+
+        function createTimelineChart(timeline) {
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+            
+            // Destroy existing chart
+            if (timelineChart) {
+                timelineChart.destroy();
             }
+            
+            // Prepare chart data
+            const labels = timeline.map(item => item.start_time_local);
+            const severityData = timeline.map(item => {
+                switch(item.severity) {
+                    case 'Clear': return 1;
+                    case 'Significant': return 2;
+                    case 'Severe': return 3;
+                    default: return 1;
+                }
+            });
+            
+            const backgroundColors = timeline.map(item => {
+                switch(item.severity) {
+                    case 'Clear': return 'rgba(16, 185, 129, 0.6)';
+                    case 'Significant': return 'rgba(245, 158, 11, 0.6)';
+                    case 'Severe': return 'rgba(239, 68, 68, 0.6)';
+                    default: return 'rgba(16, 185, 129, 0.6)';
+                }
+            });
+            
+            const borderColors = timeline.map(item => {
+                switch(item.severity) {
+                    case 'Clear': return 'rgba(16, 185, 129, 1)';
+                    case 'Significant': return 'rgba(245, 158, 11, 1)';
+                    case 'Severe': return 'rgba(239, 68, 68, 1)';
+                    default: return 'rgba(16, 185, 129, 1)';
+                }
+            });
+            
+            timelineChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Weather Severity',
+                        data: severityData,
+                        backgroundColor: backgroundColors,
+                        borderColor: borderColors,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 4,
+                            ticks: {
+                                stepSize: 1,
+                                callback: function(value) {
+                                    switch(value) {
+                                        case 1: return 'Clear';
+                                        case 2: return 'Significant';
+                                        case 3: return 'Severe';
+                                        default: return '';
+                                    }
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Weather Conditions Throughout Flight'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    const index = tooltipItems[0].dataIndex;
+                                    const item = timeline[index];
+                                    return `${item.start_time_local} - ${item.end_time_local}`;
+                                },
+                                label: function(context) {
+                                    const index = context.dataIndex;
+                                    const item = timeline[index];
+                                    return [
+                                        `Severity: ${item.severity}`,
+                                        `Condition: ${item.conditions.condition}`,
+                                        `Location: ${item.location_description}`
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function formatFlightTime(hours) {
+            const h = Math.floor(hours);
+            const m = Math.round((hours - h) * 60);
+            return `${h}h ${m}m`;
         }
 
         // Event listeners
-        searchBtn.addEventListener('click', () => {
-            const airports = airportsInput.value.trim().split(',').map(a => a.trim().toUpperCase()).filter(a => a);
-            if (airports.length === 0) {
-                showError('Please enter at least one airport ICAO code');
-                return;
-            }
-            fetchWeather(airports);
-        });
-
-        clearBtn.addEventListener('click', () => {
-            airportsInput.value = '';
-            weatherGrid.innerHTML = '';
-            routeSummary.style.display = 'none';
-            hideLoading();
-            errorMessage.style.display = 'none';
-            successMessage.style.display = 'none';
-        });
-
-        flightPlanBtn.addEventListener('click', fetchFlightPlanWeather);
+        analyzeBtn.addEventListener('click', analyzeWeatherTimeline);
 
         // Allow Enter key in inputs
-        airportsInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') searchBtn.click();
-        });
-
-        [departureInput, destinationInput, waypointsInput].forEach(input => {
+        [departureInput, destinationInput, waypointsInput, cruiseSpeedInput, departureTimeInput].forEach(input => {
             input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') flightPlanBtn.click();
+                if (e.key === 'Enter') analyzeBtn.click();
             });
-        });
-
-        // Initial load with sample data
-        document.addEventListener('DOMContentLoaded', () => {
-            // Auto-load sample data
-            setTimeout(() => {
-                searchBtn.click();
-            }, 1000);
         });
     </script>
 </body>
