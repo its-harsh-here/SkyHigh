@@ -1,0 +1,69 @@
+.App {
+  text-align: center;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.app-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 2rem;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.station-selector {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.station-selector input {
+  padding: 0.5rem;
+  border: none;
+  border-radius: 5px;
+  font-size: 1rem;
+  width: 120px;
+}
+
+.station-selector button {
+  padding: 0.5rem 1rem;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.station-selector button:hover {
+  background: #45a049;
+}
+
+.app-main {
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Weather Category Colors */
+.category-severe {
+  color: #d32f2f;
+  background: rgba(211, 47, 47, 0.1);
+}
+
+.category-significant {
+  color: #f57c00;
+  background: rgba(245, 124, 0, 0.1);
+}
+
+.category-clear {
+  color: #388e3c;
+  background: rgba(56, 142, 60, 0.1);
+}
