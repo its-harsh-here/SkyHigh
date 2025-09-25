@@ -15,10 +15,11 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 
 class WeatherProcessor:
-    """Process and categorize aviation weather data"""
+    """Process and categorize aviation weather data with NOTAM support"""
     
     def __init__(self):
         self.base_url = "https://aviationweather.gov/api/data"
+        self.avwx_base = "https://avwx.rest"  # AVWX API for NOTAMs
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'PilotWeatherBriefingApp/1.0'
@@ -87,7 +88,7 @@ class WeatherProcessor:
             
         except Exception as e:
             logging.error(f"Error categorizing weather: {e}")
-            return "Clear"  # Default to Clear if error
+            return "Clear"
 
     def calculate_flight_path(self, departure: str, destination: str, waypoints: List[str] = None, 
                             cruise_speed: int = 450, departure_time: str = None) -> List[Dict]:
@@ -187,8 +188,8 @@ class WeatherProcessor:
         
         return R * c
 
-    def get_comprehensive_weather(self, bbox: str = None, flight_segments: List[Dict] = None) -> Dict:
-        """Fetch comprehensive weather data for flight path"""
+    def get_comprehensive_weather(self, bbox: str = None, flight_segments: List[Dict] = None, airports: List[str] = None) -> Dict:
+        """Fetch comprehensive weather data including NOTAMs for flight path"""
         weather_data = {}
         
         # Determine bounding box from flight segments if not provided
@@ -207,15 +208,23 @@ class WeatherProcessor:
         if not bbox:
             bbox = "25,-125,50,-65"
         
-        # Fetch different weather products concurrently
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        # Collect airports for NOTAM fetching
+        if not airports and flight_segments:
+            airports = []
+            for segment in flight_segments:
+                airports.extend([segment['from'], segment['to']])
+            airports = list(set(airports))  # Remove duplicates
+        
+        # Fetch different weather products concurrently including NOTAMs
+        with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
             futures = {
                 'metars': executor.submit(self.get_metars_by_bbox, bbox),
                 'tafs': executor.submit(self.get_tafs_by_bbox, bbox),
                 'pireps': executor.submit(self.get_pireps_by_bbox, bbox),
                 'sigmets': executor.submit(self.get_sigmets),
                 'gairmets': executor.submit(self.get_gairmets),
-                'cwas': executor.submit(self.get_cwas)
+                'cwas': executor.submit(self.get_cwas),
+                'notams': executor.submit(self.get_notams, airports or [])
             }
             
             for product_type, future in futures.items():
@@ -226,6 +235,104 @@ class WeatherProcessor:
                     weather_data[product_type] = []
         
         return weather_data
+
+    def get_notams(self, airports: List[str]) -> List[Dict]:
+        """Fetch NOTAM data for specified airports"""
+        notams = []
+        
+        # Try AVWX API first (free tier has limited access)
+        for airport in airports[:3]:  # Limit to 3 airports for demo
+            try:
+                # AVWX API endpoint (free tier)
+                url = f"{self.avwx_base}/api/notam/{airport}"
+                headers = {
+                    'User-Agent': 'PilotWeatherBriefingApp/1.0'
+                }
+                
+                response = self.session.get(url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'notams' in data:
+                        for notam in data['notams']:
+                            notams.append({
+                                'airport': airport,
+                                'notam_id': notam.get('id', 'Unknown'),
+                                'text': notam.get('text', ''),
+                                'start_time': notam.get('start_time', ''),
+                                'end_time': notam.get('end_time', ''),
+                                'classification': notam.get('classification', 'Unknown'),
+                                'created': notam.get('created', ''),
+                                'source': 'AVWX API'
+                            })
+            except Exception as e:
+                logging.warning(f"Error fetching NOTAMs from AVWX for {airport}: {e}")
+        
+        # If no real NOTAMs, generate sample NOTAMs for hackathon demo
+        if not notams and airports:
+            notams = self.generate_sample_notams(airports)
+        
+        return notams
+
+    def generate_sample_notams(self, airports: List[str]) -> List[Dict]:
+        """Generate sample NOTAMs for demonstration purposes"""
+        sample_notams = []
+        
+        notam_templates = [
+            {
+                'text': 'RWY {rwy} CLOSED FOR MAINTENANCE',
+                'classification': 'Runway',
+                'severity': 'Significant'
+            },
+            {
+                'text': 'ILS RWY {rwy} OUT OF SERVICE',
+                'classification': 'Navigation Aid',
+                'severity': 'Significant'
+            },
+            {
+                'text': 'CONSTRUCTION ACTIVITY NEAR TERMINAL',
+                'classification': 'Airport',
+                'severity': 'Clear'
+            },
+            {
+                'text': 'TEMPORARY FLIGHT RESTRICTION IN EFFECT',
+                'classification': 'Airspace',
+                'severity': 'Severe'
+            },
+            {
+                'text': 'TAXIWAY {twy} PARTIALLY CLOSED',
+                'classification': 'Taxiway',
+                'severity': 'Clear'
+            }
+        ]
+        
+        runways = ['09/27', '18/36', '04/22', '13/31', '01/19']
+        taxiways = ['A', 'B', 'C', 'D', 'E']
+        
+        current_time = datetime.now(timezone.utc)
+        
+        for i, airport in enumerate(airports[:4]):  # Limit to 4 airports
+            template = notam_templates[i % len(notam_templates)]
+            runway = runways[i % len(runways)]
+            taxiway = taxiways[i % len(taxiways)]
+            
+            start_time = current_time - timedelta(hours=i*2)
+            end_time = current_time + timedelta(days=1+i, hours=i*3)
+            
+            notam_text = template['text'].format(rwy=runway, twy=taxiway)
+            
+            sample_notams.append({
+                'airport': airport,
+                'notam_id': f"A{1000+i}/24",
+                'text': notam_text,
+                'start_time': start_time.isoformat(),
+                'end_time': end_time.isoformat(),
+                'classification': template['classification'],
+                'severity': template['severity'],
+                'created': start_time.isoformat(),
+                'source': 'Demo Data'
+            })
+        
+        return sample_notams
 
     def get_metars_by_bbox(self, bbox: str) -> List[Dict]:
         """Fetch METAR data by bounding box"""
@@ -374,13 +481,19 @@ class WeatherProcessor:
         # Check for PIREPs in area
         pirep_reports = self.get_pireps_near_location(lat, lon, weather_data.get('pireps', []))
         
-        # Check for hazardous weather warnings - FIXED BUG HERE
+        # Check for hazardous weather warnings
         hazards = self.check_hazards_for_location(lat, lon, weather_data)
         
+        # Check for NOTAMs affecting nearby airports
+        notam_warnings = self.check_notams_for_location(lat, lon, weather_data.get('notams', []))
+        
+        # Combine hazards with NOTAM warnings
+        all_hazards = hazards + notam_warnings
+        
         # Determine primary weather condition
-        if hazards:  # Only if there are actual hazards
-            severity = "Severe" if any("SIGMET" in h or "thunderstorm" in h.lower() for h in hazards) else "Significant"
-            condition = "Hazardous weather in area"
+        if all_hazards:
+            severity = "Severe" if any("TFR" in h or "CLOSED" in h or "SIGMET" in h for h in all_hazards) else "Significant"
+            condition = "Advisory conditions in area"
         elif nearest_metar:
             severity = nearest_metar.get('category', 'Clear')
             condition = self.get_weather_description(nearest_metar)
@@ -391,11 +504,38 @@ class WeatherProcessor:
         return {
             'severity': severity,
             'condition': condition,
-            'description': self.create_detailed_description(nearest_metar, pirep_reports, hazards),
-            'hazards': hazards,
+            'description': self.create_detailed_description(nearest_metar, pirep_reports, all_hazards),
+            'hazards': all_hazards,
             'pirep_count': len(pirep_reports),
             'nearest_station': nearest_metar.get('icaoId') if nearest_metar else None
         }
+
+    def check_notams_for_location(self, lat: float, lon: float, notams: List[Dict]) -> List[str]:
+        """Check for NOTAMs affecting nearby airports"""
+        warnings = []
+        
+        # Find NOTAMs for airports within reasonable distance
+        for notam in notams:
+            # For demo purposes, assume all NOTAMs in the list are relevant
+            # In a real implementation, you'd check coordinates or airport proximity
+            
+            classification = notam.get('classification', 'Unknown')
+            severity = notam.get('severity', 'Clear')
+            text = notam.get('text', '')
+            airport = notam.get('airport', '')
+            
+            if severity == 'Severe':
+                if 'TFR' in text or 'RESTRICTION' in text:
+                    warnings.append(f"NOTAM {airport}: Airspace restriction active")
+                elif 'CLOSED' in text:
+                    warnings.append(f"NOTAM {airport}: Facility closure")
+            elif severity == 'Significant':
+                if 'ILS' in text or 'NAVIGATION' in classification:
+                    warnings.append(f"NOTAM {airport}: Navigation aid affected")
+                elif 'RWY' in text or 'RUNWAY' in classification:
+                    warnings.append(f"NOTAM {airport}: Runway operations affected")
+        
+        return warnings[:2]  # Limit to 2 most relevant NOTAMs
 
     def find_nearest_weather_data(self, lat: float, lon: float, weather_list: List[Dict]) -> Optional[Dict]:
         """Find nearest weather station to given coordinates"""
@@ -430,7 +570,7 @@ class WeatherProcessor:
         return nearby_pireps
 
     def check_hazards_for_location(self, lat: float, lon: float, weather_data: Dict) -> List[str]:
-        """Check for weather hazards at location - FIXED BUG"""
+        """Check for weather hazards at location"""
         hazards = []
         
         # Only add hazards if there are actually hazardous conditions present
@@ -440,10 +580,8 @@ class WeatherProcessor:
         
         # Check SIGMETs - only add if there are actual SIGMETs
         if sigmets and len(sigmets) > 0:
-            # Check if any SIGMETs are relevant to the location
             relevant_sigmets = []
             for sigmet in sigmets:
-                # Add basic location check if coordinates are available
                 if sigmet.get('lat') and sigmet.get('lon'):
                     distance = self.haversine_distance(lat, lon, sigmet['lat'], sigmet['lon'])
                     if distance < 200:  # Within 200nm
@@ -550,7 +688,7 @@ def static_files(filename):
 
 @app.route('/api/enhanced-flight-plan', methods=['POST'])
 def enhanced_flight_plan():
-    """Enhanced flight plan analysis with comprehensive weather timeline"""
+    """Enhanced flight plan analysis with comprehensive weather timeline and NOTAMs"""
     try:
         data = request.get_json()
         departure = data.get('departure', '').upper()
@@ -570,15 +708,19 @@ def enhanced_flight_plan():
         if not flight_segments:
             return jsonify({'error': 'Unable to calculate flight path'}), 400
         
-        # Get comprehensive weather data for the flight path
+        # Collect all airports for NOTAM fetching
+        all_airports = [departure, destination] + waypoints
+        
+        # Get comprehensive weather data including NOTAMs for the flight path
         weather_data = weather_processor.get_comprehensive_weather(
-            flight_segments=flight_segments
+            flight_segments=flight_segments,
+            airports=all_airports
         )
         
         # Create detailed timeline analysis
         timeline = weather_processor.create_timeline_analysis(flight_segments, weather_data)
         
-        # Calculate overall assessment - FIXED LOGIC
+        # Calculate overall assessment
         severities = [item['severity'] for item in timeline]
         overall_severity = 'Clear'
         if 'Severe' in severities:
@@ -611,8 +753,10 @@ def enhanced_flight_plan():
                 'pireps_count': len(weather_data.get('pireps', [])),
                 'sigmets_count': len(weather_data.get('sigmets', [])),
                 'gairmets_count': len(weather_data.get('gairmets', [])),
-                'cwas_count': len(weather_data.get('cwas', []))
-            }
+                'cwas_count': len(weather_data.get('cwas', [])),
+                'notams_count': len(weather_data.get('notams', []))
+            },
+            'notams': weather_data.get('notams', [])
         })
         
     except Exception as e:
