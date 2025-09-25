@@ -8,7 +8,6 @@ import logging
 from typing import Dict, List, Optional, Tuple
 import math
 import concurrent.futures
-from dataclasses import dataclass
 
 app = Flask(__name__)
 CORS(app)
@@ -19,7 +18,6 @@ class WeatherProcessor:
     
     def __init__(self):
         self.base_url = "https://aviationweather.gov/api/data"
-        self.avwx_base = "https://avwx.rest"  # AVWX API for NOTAMs
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'PilotWeatherBriefingApp/1.0'
@@ -237,43 +235,6 @@ class WeatherProcessor:
         return weather_data
 
     def get_notams(self, airports: List[str]) -> List[Dict]:
-        """Fetch NOTAM data for specified airports"""
-        notams = []
-        
-        # Try AVWX API first (free tier has limited access)
-        for airport in airports[:3]:  # Limit to 3 airports for demo
-            try:
-                # AVWX API endpoint (free tier)
-                url = f"{self.avwx_base}/api/notam/{airport}"
-                headers = {
-                    'User-Agent': 'PilotWeatherBriefingApp/1.0'
-                }
-                
-                response = self.session.get(url, headers=headers, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    if 'notams' in data:
-                        for notam in data['notams']:
-                            notams.append({
-                                'airport': airport,
-                                'notam_id': notam.get('id', 'Unknown'),
-                                'text': notam.get('text', ''),
-                                'start_time': notam.get('start_time', ''),
-                                'end_time': notam.get('end_time', ''),
-                                'classification': notam.get('classification', 'Unknown'),
-                                'created': notam.get('created', ''),
-                                'source': 'AVWX API'
-                            })
-            except Exception as e:
-                logging.warning(f"Error fetching NOTAMs from AVWX for {airport}: {e}")
-        
-        # If no real NOTAMs, generate sample NOTAMs for hackathon demo
-        if not notams and airports:
-            notams = self.generate_sample_notams(airports)
-        
-        return notams
-
-    def generate_sample_notams(self, airports: List[str]) -> List[Dict]:
         """Generate sample NOTAMs for demonstration purposes"""
         sample_notams = []
         
@@ -490,16 +451,24 @@ class WeatherProcessor:
         # Combine hazards with NOTAM warnings
         all_hazards = hazards + notam_warnings
         
-        # Determine primary weather condition
-        if all_hazards:
-            severity = "Severe" if any("TFR" in h or "CLOSED" in h or "SIGMET" in h for h in all_hazards) else "Significant"
-            condition = "Advisory conditions in area"
-        elif nearest_metar:
-            severity = nearest_metar.get('category', 'Clear')
+        # Determine primary weather condition (FIXED LOGIC)
+        if nearest_metar:
+            base_severity = nearest_metar.get('category', 'Clear')
             condition = self.get_weather_description(nearest_metar)
         else:
-            severity = "Clear"
+            base_severity = "Clear"
             condition = "No significant weather reported"
+        
+        # Only upgrade severity if there are actual hazards
+        if all_hazards:
+            if any("TFR" in h or "CLOSED" in h or "SIGMET" in h for h in all_hazards):
+                severity = "Severe"
+                condition = f"{condition} | Advisory conditions in area"
+            else:
+                severity = "Significant" if base_severity == "Clear" else base_severity
+                condition = f"{condition} | Minor advisories"
+        else:
+            severity = base_severity
         
         return {
             'severity': severity,
@@ -514,11 +483,8 @@ class WeatherProcessor:
         """Check for NOTAMs affecting nearby airports"""
         warnings = []
         
-        # Find NOTAMs for airports within reasonable distance
+        # Only show significant NOTAMs for demo
         for notam in notams:
-            # For demo purposes, assume all NOTAMs in the list are relevant
-            # In a real implementation, you'd check coordinates or airport proximity
-            
             classification = notam.get('classification', 'Unknown')
             severity = notam.get('severity', 'Clear')
             text = notam.get('text', '')
@@ -527,15 +493,10 @@ class WeatherProcessor:
             if severity == 'Severe':
                 if 'TFR' in text or 'RESTRICTION' in text:
                     warnings.append(f"NOTAM {airport}: Airspace restriction active")
-                elif 'CLOSED' in text:
-                    warnings.append(f"NOTAM {airport}: Facility closure")
-            elif severity == 'Significant':
-                if 'ILS' in text or 'NAVIGATION' in classification:
-                    warnings.append(f"NOTAM {airport}: Navigation aid affected")
-                elif 'RWY' in text or 'RUNWAY' in classification:
-                    warnings.append(f"NOTAM {airport}: Runway operations affected")
+                elif 'CLOSED' in text and 'RWY' in text:
+                    warnings.append(f"NOTAM {airport}: Runway closure")
         
-        return warnings[:2]  # Limit to 2 most relevant NOTAMs
+        return warnings[:1]  # Limit to 1 most critical NOTAM
 
     def find_nearest_weather_data(self, lat: float, lon: float, weather_list: List[Dict]) -> Optional[Dict]:
         """Find nearest weather station to given coordinates"""
@@ -578,7 +539,7 @@ class WeatherProcessor:
         gairmets = weather_data.get('gairmets', [])  
         cwas = weather_data.get('cwas', [])
         
-        # Check SIGMETs - only add if there are actual SIGMETs
+        # Check SIGMETs - only add if there are actual SIGMETs near location
         if sigmets and len(sigmets) > 0:
             relevant_sigmets = []
             for sigmet in sigmets:
@@ -588,7 +549,7 @@ class WeatherProcessor:
                         relevant_sigmets.append(sigmet)
             
             if relevant_sigmets:
-                hazards.append("SIGMET: Hazardous weather advisory active")
+                hazards.append("SIGMET: Hazardous weather advisory")
         
         # Check G-AIRMETs - only add if there are actual G-AIRMETs near location
         if gairmets and len(gairmets) > 0:
@@ -612,9 +573,9 @@ class WeatherProcessor:
                         relevant_cwas.append(cwa)
             
             if relevant_cwas:
-                hazards.append("CWA: Center weather advisory active")
+                hazards.append("CWA: Center weather advisory")
         
-        return hazards[:3]  # Limit to top 3 hazards
+        return hazards[:2]  # Limit to top 2 hazards
 
     def get_weather_description(self, metar: Dict) -> str:
         """Get human-readable weather description from METAR"""
