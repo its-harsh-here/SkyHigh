@@ -74,14 +74,18 @@ class WeatherProcessor:
                 coordinates[icao] = coords
         if len(coordinates) < 2:
             return []
-        # --- FIX: Parse user-provided departure_time strictly ---
+        # --- Parse user-provided departure_time strictly and check for future dates ---
         if departure_time:
             try:
+                # Accepts ISO 8601, e.g. '2025-09-26T02:00:00Z' or '2025-09-26T02:00:00+00:00'
                 if departure_time.endswith('Z'):
                     departure_time = departure_time.replace('Z', '+00:00')
                 current_time = datetime.fromisoformat(departure_time)
+                now_utc = datetime.now(timezone.utc)
+                if current_time > now_utc:
+                    raise ValueError('Departure time cannot be in the future.')
             except Exception:
-                raise ValueError('Invalid departure_time format. Use ISO 8601 (e.g. 2025-09-26T02:00:00Z)')
+                raise ValueError('Invalid departure_time format. Use ISO 8601 (e.g. 2025-09-26T02:00:00Z) and not a future date.')
         else:
             current_time = datetime.now(timezone.utc)
         path_points = list(coordinates.keys())
