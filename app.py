@@ -36,11 +36,14 @@ class WeatherProcessor:
             # Convert visibility to numeric value
             if isinstance(visibility, str):
                 if 'SM' in visibility:
-                    vis_val = float(re.findall(r'[\d.]+', visibility)[0]) if re.findall(r'[\d.]+', visibility) else 10
+                    vis_match = re.findall(r'[\d.]+', visibility)
+                    vis_val = float(vis_match[0]) if vis_match else 10
                 elif visibility == '9999' or visibility == 'CAVOK':
                     vis_val = 10
+                elif visibility.isdigit():
+                    vis_val = float(visibility) / 1609  # Convert meters to miles
                 else:
-                    vis_val = float(visibility) / 1609 if visibility.isdigit() else 10  # Convert meters to miles
+                    vis_val = 10
             else:
                 vis_val = float(visibility) if visibility else 10
             
@@ -371,11 +374,11 @@ class WeatherProcessor:
         # Check for PIREPs in area
         pirep_reports = self.get_pireps_near_location(lat, lon, weather_data.get('pireps', []))
         
-        # Check for hazardous weather warnings
+        # Check for hazardous weather warnings - FIXED BUG HERE
         hazards = self.check_hazards_for_location(lat, lon, weather_data)
         
         # Determine primary weather condition
-        if hazards:
+        if hazards:  # Only if there are actual hazards
             severity = "Severe" if any("SIGMET" in h or "thunderstorm" in h.lower() for h in hazards) else "Significant"
             condition = "Hazardous weather in area"
         elif nearest_metar:
@@ -427,20 +430,51 @@ class WeatherProcessor:
         return nearby_pireps
 
     def check_hazards_for_location(self, lat: float, lon: float, weather_data: Dict) -> List[str]:
-        """Check for weather hazards at location"""
+        """Check for weather hazards at location - FIXED BUG"""
         hazards = []
         
-        # Check SIGMETs
-        if weather_data.get('sigmets', []):
-            hazards.append("SIGMET: Hazardous weather advisory active")
+        # Only add hazards if there are actually hazardous conditions present
+        sigmets = weather_data.get('sigmets', [])
+        gairmets = weather_data.get('gairmets', [])  
+        cwas = weather_data.get('cwas', [])
         
-        # Check G-AIRMETs
-        if weather_data.get('gairmets', []):
-            hazards.append("G-AIRMET: Moderate weather advisory")
+        # Check SIGMETs - only add if there are actual SIGMETs
+        if sigmets and len(sigmets) > 0:
+            # Check if any SIGMETs are relevant to the location
+            relevant_sigmets = []
+            for sigmet in sigmets:
+                # Add basic location check if coordinates are available
+                if sigmet.get('lat') and sigmet.get('lon'):
+                    distance = self.haversine_distance(lat, lon, sigmet['lat'], sigmet['lon'])
+                    if distance < 200:  # Within 200nm
+                        relevant_sigmets.append(sigmet)
+            
+            if relevant_sigmets:
+                hazards.append("SIGMET: Hazardous weather advisory active")
         
-        # Check Center Weather Advisories
-        if weather_data.get('cwas', []):
-            hazards.append("CWA: Center weather advisory active")
+        # Check G-AIRMETs - only add if there are actual G-AIRMETs near location
+        if gairmets and len(gairmets) > 0:
+            relevant_gairmets = []
+            for gairmet in gairmets:
+                if gairmet.get('lat') and gairmet.get('lon'):
+                    distance = self.haversine_distance(lat, lon, gairmet['lat'], gairmet['lon'])
+                    if distance < 100:  # Within 100nm
+                        relevant_gairmets.append(gairmet)
+            
+            if relevant_gairmets:
+                hazards.append("G-AIRMET: Moderate weather advisory")
+        
+        # Check Center Weather Advisories - only add if relevant to location
+        if cwas and len(cwas) > 0:
+            relevant_cwas = []
+            for cwa in cwas:
+                if cwa.get('lat') and cwa.get('lon'):
+                    distance = self.haversine_distance(lat, lon, cwa['lat'], cwa['lon'])
+                    if distance < 150:  # Within 150nm
+                        relevant_cwas.append(cwa)
+            
+            if relevant_cwas:
+                hazards.append("CWA: Center weather advisory active")
         
         return hazards[:3]  # Limit to top 3 hazards
 
@@ -455,6 +489,8 @@ class WeatherProcessor:
         wx_string = metar.get('wxString', '')
         if wx_string:
             conditions.append(f"Weather: {wx_string}")
+        else:
+            conditions.append("Weather: Clear")
         
         # Visibility
         visibility = metar.get('visib')
@@ -465,7 +501,11 @@ class WeatherProcessor:
         wind_dir = metar.get('wdir')
         wind_speed = metar.get('wspd')
         if wind_dir and wind_speed:
-            conditions.append(f"Wind: {wind_dir}°/{wind_speed}kt")
+            wind_gust = metar.get('wgst')
+            if wind_gust:
+                conditions.append(f"Wind: {wind_dir}°/{wind_speed}G{wind_gust}kt")
+            else:
+                conditions.append(f"Wind: {wind_dir}°/{wind_speed}kt")
         
         return " | ".join(conditions) if conditions else "Clear conditions"
 
@@ -482,7 +522,7 @@ class WeatherProcessor:
         if hazards:
             description_parts.extend(hazards)
         
-        return " | ".join(description_parts)
+        return " | ".join(description_parts) if description_parts else "No significant weather reported"
 
     def get_location_description(self, lat: float, lon: float, segment: Dict, progress: float) -> str:
         """Get human-readable location description"""
@@ -538,7 +578,7 @@ def enhanced_flight_plan():
         # Create detailed timeline analysis
         timeline = weather_processor.create_timeline_analysis(flight_segments, weather_data)
         
-        # Calculate overall assessment
+        # Calculate overall assessment - FIXED LOGIC
         severities = [item['severity'] for item in timeline]
         overall_severity = 'Clear'
         if 'Severe' in severities:
