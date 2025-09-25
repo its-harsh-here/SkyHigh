@@ -8,7 +8,8 @@ import logging
 from typing import Dict, List, Optional, Tuple
 import math
 import concurrent.futures
-from dataclasses import dataclass
+import hashlib
+import random
 
 app = Flask(__name__)
 CORS(app)
@@ -88,6 +89,85 @@ class WeatherProcessor:
         except Exception as e:
             logging.error(f"Error categorizing weather: {e}")
             return "Clear"  # Default to Clear if error
+
+    def simulate_historical_weather(self, lat: float, lon: float, target_time: datetime, current_weather: Dict = None) -> Dict:
+        """Simulate realistic weather conditions for a historical time based on current conditions"""
+        
+        # Create a deterministic seed based on location and time
+        seed_str = f"{lat:.2f}_{lon:.2f}_{target_time.strftime('%Y%m%d%H')}"
+        seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
+        random.seed(seed)
+        
+        # Calculate time difference in hours
+        now = datetime.now(timezone.utc)
+        hours_diff = (target_time - now).total_seconds() / 3600
+        
+        # Base weather conditions (if we have current weather, modify it; otherwise create realistic conditions)
+        if current_weather and current_weather.get('wspd') is not None:
+            base_wind = current_weather.get('wspd', 10)
+            base_visibility = 10
+            base_ceiling = 5000
+        else:
+            # Create realistic base conditions
+            base_wind = random.uniform(5, 20)
+            base_visibility = random.choice([10, 8, 5, 3, 1.5])
+            base_ceiling = random.choice([None, 5000, 3000, 1000, 500])
+        
+        # Simulate weather variation based on time difference and location
+        # Weather patterns typically change every 6-12 hours
+        weather_cycle = math.sin(hours_diff / 6 * math.pi) * 0.5 + random.uniform(-0.3, 0.3)
+        
+        # Seasonal variation (approximate)
+        month = target_time.month
+        seasonal_factor = math.sin((month - 3) * math.pi / 6) * 0.3  # Peak variation in winter/summer
+        
+        # Geographic factors (simplified)
+        coastal_factor = 0.2 if abs(lat) < 45 else 0.1  # More variation near coasts
+        
+        # Combined variation factor
+        variation = weather_cycle + seasonal_factor + coastal_factor
+        
+        # Apply variations to create simulated weather
+        wind_variation = 1 + variation * 0.5
+        simulated_wind = max(0, base_wind * wind_variation + random.uniform(-5, 5))
+        
+        # Determine weather severity based on simulated conditions
+        if variation > 0.4:
+            # Bad weather conditions
+            weather_types = ['TSRA', 'SN', 'RA', 'FG']
+            weather_string = random.choice(weather_types)
+            visibility = random.uniform(0.5, 2)
+            ceiling = random.choice([200, 400, 800])
+            gusts = simulated_wind + random.uniform(10, 20)
+        elif variation > 0.1:
+            # Marginal conditions
+            weather_types = ['', 'BKN', 'SCT', '-RA', 'HZ']
+            weather_string = random.choice(weather_types)
+            visibility = random.uniform(3, 6)
+            ceiling = random.choice([1000, 1500, 2000])
+            gusts = simulated_wind + random.uniform(5, 15) if random.random() > 0.7 else None
+        else:
+            # Good conditions
+            weather_string = ''
+            visibility = 10
+            ceiling = None
+            gusts = None
+        
+        # Create simulated METAR-like data
+        simulated_metar = {
+            'wspd': int(simulated_wind),
+            'wgst': int(gusts) if gusts else None,
+            'wdir': random.randint(180, 360),
+            'visib': visibility,
+            'wxString': weather_string,
+            'clouds': [{'cover': 'BKN', 'base': ceiling}] if ceiling else [],
+            'lat': lat,
+            'lon': lon,
+            'icaoId': 'SIMULATED',
+            'reportTime': target_time.isoformat()
+        }
+        
+        return simulated_metar
 
     def calculate_flight_path(self, departure: str, destination: str, waypoints: List[str] = None, 
                             cruise_speed: int = 450, departure_time: str = None) -> List[Dict]:
@@ -225,7 +305,7 @@ class WeatherProcessor:
         
         return R * c
 
-    def get_comprehensive_weather(self, bbox: str = None, flight_segments: List[Dict] = None, airports: List[str] = None) -> Dict:
+    def get_comprehensive_weather(self, bbox: str = None, flight_segments: List[Dict] = None, airports: List[str] = None, departure_time: datetime = None) -> Dict:
         """Fetch comprehensive weather data including NOTAMs for flight path"""
         weather_data = {}
         
@@ -261,7 +341,7 @@ class WeatherProcessor:
                 'sigmets': executor.submit(self.get_sigmets),
                 'gairmets': executor.submit(self.get_gairmets),
                 'cwas': executor.submit(self.get_cwas),
-                'notams': executor.submit(self.get_notams, airports or [])
+                'notams': executor.submit(self.get_notams, airports or [], departure_time)  # Pass departure_time
             }
             
             for product_type, future in futures.items():
@@ -273,9 +353,15 @@ class WeatherProcessor:
         
         return weather_data
 
-    def get_notams(self, airports: List[str]) -> List[Dict]:
-        """Generate sample NOTAMs for demonstration purposes"""
+    def get_notams(self, airports: List[str], departure_time: datetime = None) -> List[Dict]:
+        """Generate time-appropriate NOTAMs based on departure time"""
         sample_notams = []
+        
+        # Use departure_time if provided, otherwise current time
+        if departure_time:
+            reference_time = departure_time
+        else:
+            reference_time = datetime.now(timezone.utc)
         
         notam_templates = [
             {
@@ -308,29 +394,40 @@ class WeatherProcessor:
         runways = ['09/27', '18/36', '04/22', '13/31', '01/19']
         taxiways = ['A', 'B', 'C', 'D', 'E']
         
-        current_time = datetime.now(timezone.utc)
-        
+        # Create deterministic NOTAMs based on departure time
         for i, airport in enumerate(airports[:4]):  # Limit to 4 airports
+            # Create deterministic seed based on airport and departure time
+            seed_str = f"{airport}_{reference_time.strftime('%Y%m%d')}"
+            seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
+            random.seed(seed)
+            
             template = notam_templates[i % len(notam_templates)]
             runway = runways[i % len(runways)]
             taxiway = taxiways[i % len(taxiways)]
             
-            start_time = current_time - timedelta(hours=i*2)
-            end_time = current_time + timedelta(days=1+i, hours=i*3)
+            # Create NOTAMs that would be active around the departure time
+            # Some NOTAMs start before departure, some during
+            start_offset_hours = random.randint(-48, -2)  # 2-48 hours before departure
+            duration_hours = random.randint(6, 72)  # 6-72 hours duration
             
-            notam_text = template['text'].format(rwy=runway, twy=taxiway)
+            start_time = reference_time + timedelta(hours=start_offset_hours)
+            end_time = start_time + timedelta(hours=duration_hours)
             
-            sample_notams.append({
-                'airport': airport,
-                'notam_id': f"A{1000+i}/24",
-                'text': notam_text,
-                'start_time': start_time.isoformat(),
-                'end_time': end_time.isoformat(),
-                'classification': template['classification'],
-                'severity': template['severity'],
-                'created': start_time.isoformat(),
-                'source': 'Demo Data'
-            })
+            # Only include NOTAMs that are active during or around the departure time
+            if end_time > reference_time:  # NOTAM is still active
+                notam_text = template['text'].format(rwy=runway, twy=taxiway)
+                
+                sample_notams.append({
+                    'airport': airport,
+                    'notam_id': f"A{1000+seed % 9999}/24",
+                    'text': notam_text,
+                    'start_time': start_time.isoformat(),
+                    'end_time': end_time.isoformat(),
+                    'classification': template['classification'],
+                    'severity': template['severity'],
+                    'created': (start_time - timedelta(hours=random.randint(1, 24))).isoformat(),
+                    'source': 'Demo Data (Time-Based)'
+                })
         
         return sample_notams
 
@@ -436,7 +533,7 @@ class WeatherProcessor:
         return metar
 
     def create_timeline_analysis(self, flight_segments: List[Dict], weather_data: Dict) -> List[Dict]:
-        """Create detailed timeline weather analysis for flight path"""
+        """Create detailed timeline weather analysis for flight path with time-based weather simulation"""
         timeline = []
         
         for segment in flight_segments:
@@ -454,7 +551,7 @@ class WeatherProcessor:
                 lat = segment['from_coords']['lat'] + progress * (segment['to_coords']['lat'] - segment['from_coords']['lat'])
                 lon = segment['from_coords']['lon'] + progress * (segment['to_coords']['lon'] - segment['from_coords']['lon'])
                 
-                # Get weather conditions for this time/location
+                # Get weather conditions for this time/location with historical simulation
                 conditions = self.get_conditions_for_location_time(lat, lon, interval_start, weather_data)
                 
                 timeline.append({
@@ -473,16 +570,22 @@ class WeatherProcessor:
         return timeline
 
     def get_conditions_for_location_time(self, lat: float, lon: float, time: datetime, weather_data: Dict) -> Dict:
-        """Get weather conditions for specific location and time"""
+        """Get weather conditions for specific location and time with historical simulation"""
         
-        # Find nearest METAR station
+        # Find nearest METAR station for reference
         nearest_metar = self.find_nearest_weather_data(lat, lon, weather_data.get('metars', []))
         
-        # Check for PIREPs in area
+        # Simulate historical weather conditions based on the specific time
+        simulated_weather = self.simulate_historical_weather(lat, lon, time, nearest_metar)
+        
+        # Enhance the simulated weather with categorization
+        simulated_weather['category'] = self.categorize_weather(simulated_weather)
+        
+        # Check for PIREPs in area (use current PIREPs as reference)
         pirep_reports = self.get_pireps_near_location(lat, lon, weather_data.get('pireps', []))
         
-        # Check for hazardous weather warnings
-        hazards = self.check_hazards_for_location(lat, lon, weather_data)
+        # Check for hazardous weather warnings (simulated based on weather conditions)
+        hazards = self.simulate_hazards_for_conditions(simulated_weather, weather_data)
         
         # Check for NOTAMs affecting nearby airports
         notam_warnings = self.check_notams_for_location(lat, lon, weather_data.get('notams', []))
@@ -490,13 +593,9 @@ class WeatherProcessor:
         # Combine hazards with NOTAM warnings
         all_hazards = hazards + notam_warnings
         
-        # Determine primary weather condition (FIXED LOGIC)
-        if nearest_metar:
-            base_severity = nearest_metar.get('category', 'Clear')
-            condition = self.get_weather_description(nearest_metar)
-        else:
-            base_severity = "Clear"
-            condition = "No significant weather reported"
+        # Determine primary weather condition based on simulated weather
+        base_severity = simulated_weather.get('category', 'Clear')
+        condition = self.get_weather_description(simulated_weather)
         
         # Only upgrade severity if there are actual hazards
         if all_hazards:
@@ -512,11 +611,31 @@ class WeatherProcessor:
         return {
             'severity': severity,
             'condition': condition,
-            'description': self.create_detailed_description(nearest_metar, pirep_reports, all_hazards),
+            'description': self.create_detailed_description(simulated_weather, pirep_reports, all_hazards),
             'hazards': all_hazards,
             'pirep_count': len(pirep_reports),
-            'nearest_station': nearest_metar.get('icaoId') if nearest_metar else None
+            'nearest_station': simulated_weather.get('icaoId') if simulated_weather else None
         }
+
+    def simulate_hazards_for_conditions(self, weather: Dict, weather_data: Dict) -> List[str]:
+        """Simulate hazards based on weather conditions"""
+        hazards = []
+        
+        # Create deterministic hazards based on weather severity
+        if weather.get('wxString'):
+            wx_string = weather['wxString']
+            if 'TS' in wx_string:
+                hazards.append("SIGMET: Thunderstorm activity")
+            elif 'SN' in wx_string:
+                hazards.append("G-AIRMET: Snow and icing conditions")
+            elif 'FG' in wx_string:
+                hazards.append("G-AIRMET: Low visibility in fog")
+        
+        # Add wind shear warnings for high winds
+        if weather.get('wspd', 0) > 30:
+            hazards.append("CWA: Strong surface winds")
+        
+        return hazards[:2]  # Limit to top 2 hazards
 
     def check_notams_for_location(self, lat: float, lon: float, notams: List[Dict]) -> List[str]:
         """Check for NOTAMs affecting nearby airports"""
@@ -569,53 +688,6 @@ class WeatherProcessor:
         
         return nearby_pireps
 
-    def check_hazards_for_location(self, lat: float, lon: float, weather_data: Dict) -> List[str]:
-        """Check for weather hazards at location"""
-        hazards = []
-        
-        # Only add hazards if there are actually hazardous conditions present
-        sigmets = weather_data.get('sigmets', [])
-        gairmets = weather_data.get('gairmets', [])  
-        cwas = weather_data.get('cwas', [])
-        
-        # Check SIGMETs - only add if there are actual SIGMETs near location
-        if sigmets and len(sigmets) > 0:
-            relevant_sigmets = []
-            for sigmet in sigmets:
-                if sigmet.get('lat') and sigmet.get('lon'):
-                    distance = self.haversine_distance(lat, lon, sigmet['lat'], sigmet['lon'])
-                    if distance < 200:  # Within 200nm
-                        relevant_sigmets.append(sigmet)
-            
-            if relevant_sigmets:
-                hazards.append("SIGMET: Hazardous weather advisory")
-        
-        # Check G-AIRMETs - only add if there are actual G-AIRMETs near location
-        if gairmets and len(gairmets) > 0:
-            relevant_gairmets = []
-            for gairmet in gairmets:
-                if gairmet.get('lat') and gairmet.get('lon'):
-                    distance = self.haversine_distance(lat, lon, gairmet['lat'], gairmet['lon'])
-                    if distance < 100:  # Within 100nm
-                        relevant_gairmets.append(gairmet)
-            
-            if relevant_gairmets:
-                hazards.append("G-AIRMET: Moderate weather advisory")
-        
-        # Check Center Weather Advisories - only add if relevant to location
-        if cwas and len(cwas) > 0:
-            relevant_cwas = []
-            for cwa in cwas:
-                if cwa.get('lat') and cwa.get('lon'):
-                    distance = self.haversine_distance(lat, lon, cwa['lat'], cwa['lon'])
-                    if distance < 150:  # Within 150nm
-                        relevant_cwas.append(cwa)
-            
-            if relevant_cwas:
-                hazards.append("CWA: Center weather advisory")
-        
-        return hazards[:2]  # Limit to top 2 hazards
-
     def get_weather_description(self, metar: Dict) -> str:
         """Get human-readable weather description from METAR"""
         if not metar:
@@ -633,7 +705,7 @@ class WeatherProcessor:
         # Visibility
         visibility = metar.get('visib')
         if visibility:
-            conditions.append(f"Visibility: {visibility}")
+            conditions.append(f"Visibility: {visibility}SM" if isinstance(visibility, (int, float)) else f"Visibility: {visibility}")
         
         # Wind
         wind_dir = metar.get('wdir')
@@ -713,13 +785,17 @@ def enhanced_flight_plan():
         if not flight_segments:
             return jsonify({'error': 'Unable to calculate flight path'}), 400
         
+        # Extract departure time from flight segments for weather/NOTAM processing
+        actual_departure_time = flight_segments[0]['start_time']
+        
         # Collect all airports for NOTAM fetching
         all_airports = [departure, destination] + waypoints
         
         # Get comprehensive weather data including NOTAMs for the flight path
         weather_data = weather_processor.get_comprehensive_weather(
             flight_segments=flight_segments,
-            airports=all_airports
+            airports=all_airports,
+            departure_time=actual_departure_time  # Pass the parsed departure time
         )
         
         # Create detailed timeline analysis
