@@ -89,50 +89,37 @@ class WeatherProcessor:
             logging.error(f"Error categorizing weather: {e}")
             return "Clear"
 
-    def calculate_flight_path(self, departure: str, destination: str, waypoints: List[str] = None, 
-                            cruise_speed: int = 450, departure_time: str = None) -> List[Dict]:
-        """Calculate flight path with time estimates"""
-        
-        # Get coordinates for all points
+        def calculate_flight_path(self, departure, destination, waypoints=None, cruise_speed=450, departure_time=None):
         all_points = [departure] + (waypoints or []) + [destination]
         coordinates = {}
-        
-        # Fetch station info for coordinates
         for icao in all_points:
             coords = self.get_airport_coordinates(icao)
             if coords:
                 coordinates[icao] = coords
-        
         if len(coordinates) < 2:
             return []
-        
-        # Calculate flight segments with timing
-        flight_segments = []
-        current_time = datetime.now(timezone.utc)
+        # --- FIX: Parse user-provided departure_time strictly ---
         if departure_time:
             try:
-                current_time = datetime.fromisoformat(departure_time.replace('Z', '+00:00'))
-            except:
-                pass
-        
+                # Accepts ISO 8601, e.g. '2025-09-26T02:00:00Z' or '2025-09-26T02:00:00+00:00'
+                if departure_time.endswith('Z'):
+                    departure_time = departure_time.replace('Z', '+00:00')
+                current_time = datetime.fromisoformat(departure_time)
+            except Exception:
+                raise ValueError('Invalid departure_time format. Use ISO 8601 (e.g. 2025-09-26T02:00:00Z)')
+        else:
+            current_time = datetime.now(timezone.utc)
+        # ... (rest of the function as before)
         path_points = list(coordinates.keys())
-        
+        flight_segments = []
         for i in range(len(path_points) - 1):
             from_icao = path_points[i]
             to_icao = path_points[i + 1]
-            
             from_coords = coordinates[from_icao]
             to_coords = coordinates[to_icao]
-            
-            # Calculate distance and time
-            distance = self.haversine_distance(
-                from_coords['lat'], from_coords['lon'],
-                to_coords['lat'], to_coords['lon']
-            )
-            
+            distance = self.haversine_distance(from_coords['lat'], from_coords['lon'], to_coords['lat'], to_coords['lon'])
             flight_time_hours = distance / cruise_speed
             segment_end_time = current_time + timedelta(hours=flight_time_hours)
-            
             flight_segments.append({
                 'from': from_icao,
                 'to': to_icao,
@@ -145,9 +132,7 @@ class WeatherProcessor:
                 'midpoint_lat': (from_coords['lat'] + to_coords['lat']) / 2,
                 'midpoint_lon': (from_coords['lon'] + to_coords['lon']) / 2
             })
-            
             current_time = segment_end_time
-        
         return flight_segments
 
     def get_airport_coordinates(self, icao: str) -> Optional[Dict]:
