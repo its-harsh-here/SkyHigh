@@ -189,7 +189,7 @@ class WeatherProcessor:
         # Calculate flight segments with timing
         flight_segments = []
         
-        # --- FIXED: Parse user-provided departure_time strictly ---
+        # --- UPDATED: Allow 15 days in past and 4 hours in future ---
         if departure_time and departure_time.strip():
             try:
                 logging.info(f"Parsing departure_time: {departure_time}")
@@ -212,14 +212,13 @@ class WeatherProcessor:
                     if current_time.tzinfo is None:
                         current_time = current_time.replace(tzinfo=timezone.utc)
                 
-                # Check if departure time is in the future (more than 1 hour ahead)
+                # UPDATED: Allow 15 days in past and 4 hours in future (per Aviation Weather API)
                 now_utc = datetime.now(timezone.utc)
-                if current_time > now_utc + timedelta(hours=1):
-                    raise ValueError('Departure time cannot be more than 1 hour in the future. Please select a current or recent time.')
+                if current_time > now_utc + timedelta(hours=4):
+                    raise ValueError('Departure time cannot be more than 4 hours in the future (TAF forecast limit).')
                 
-                # Check if departure time is too far in the past (more than 24 hours)
-                if current_time < now_utc - timedelta(hours=24):
-                    raise ValueError('Departure time cannot be more than 24 hours in the past. Please select a more recent time.')
+                if current_time < now_utc - timedelta(days=15):
+                    raise ValueError('Departure time cannot be more than 15 days in the past (API data limit).')
                 
                 logging.info(f"Successfully parsed departure_time: {current_time}")
                 
@@ -335,9 +334,9 @@ class WeatherProcessor:
         # Fetch different weather products concurrently including NOTAMs
         with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
             futures = {
-                'metars': executor.submit(self.get_metars_by_bbox, bbox),
+                'metars': executor.submit(self.get_historical_metars_by_bbox, bbox, departure_time),
                 'tafs': executor.submit(self.get_tafs_by_bbox, bbox),
-                'pireps': executor.submit(self.get_pireps_by_bbox, bbox),
+                'pireps': executor.submit(self.get_historical_pireps_by_bbox, bbox, departure_time),
                 'sigmets': executor.submit(self.get_sigmets),
                 'gairmets': executor.submit(self.get_gairmets),
                 'cwas': executor.submit(self.get_cwas),
@@ -352,6 +351,80 @@ class WeatherProcessor:
                     weather_data[product_type] = []
         
         return weather_data
+
+    def get_historical_metars_by_bbox(self, bbox: str, departure_time: datetime = None) -> List[Dict]:
+        """Fetch METAR data by bounding box with historical support"""
+        try:
+            url = f"{self.base_url}/metar"
+            params = {
+                'bbox': bbox,
+                'format': 'json'
+            }
+            
+            # If departure time is provided, get historical data
+            if departure_time:
+                now_utc = datetime.now(timezone.utc)
+                
+                # For historical data (more than 3 hours old), use specific time range
+                if departure_time < now_utc - timedelta(hours=3):
+                    # Get historical METAR data around the departure time
+                    start_time = departure_time - timedelta(hours=1)
+                    end_time = departure_time + timedelta(hours=1)
+                    params['startTime'] = start_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+                    params['endTime'] = end_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+                else:
+                    # For recent/future times, get recent data
+                    params['hours'] = 3
+            else:
+                params['hours'] = 3
+            
+            response = self.session.get(url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                return [self.enhance_metar(metar) for metar in data]
+            elif response.status_code == 204:
+                # No data available - this is normal for historical periods
+                logging.info(f"No METAR data available for time period")
+                return []
+        except Exception as e:
+            logging.error(f"Error fetching METARs: {e}")
+        
+        return []
+
+    def get_historical_pireps_by_bbox(self, bbox: str, departure_time: datetime = None) -> List[Dict]:
+        """Fetch PIREP data by bounding box with historical support"""
+        try:
+            url = f"{self.base_url}/pirep"
+            params = {
+                'bbox': bbox,
+                'format': 'json'
+            }
+            
+            # If departure time is provided, get historical data
+            if departure_time:
+                now_utc = datetime.now(timezone.utc)
+                
+                # For historical data, use specific time range
+                if departure_time < now_utc - timedelta(hours=6):
+                    start_time = departure_time - timedelta(hours=3)
+                    end_time = departure_time + timedelta(hours=3)
+                    params['startTime'] = start_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+                    params['endTime'] = end_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+                else:
+                    params['age'] = 6
+            else:
+                params['age'] = 6
+            
+            response = self.session.get(url, params=params, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 204:
+                logging.info(f"No PIREP data available for time period")
+                return []
+        except Exception as e:
+            logging.error(f"Error fetching PIREPs: {e}")
+        
+        return []
 
     def get_notams(self, airports: List[str], departure_time: datetime = None) -> List[Dict]:
         """Generate time-appropriate NOTAMs based on departure time"""
@@ -431,25 +504,6 @@ class WeatherProcessor:
         
         return sample_notams
 
-    def get_metars_by_bbox(self, bbox: str) -> List[Dict]:
-        """Fetch METAR data by bounding box"""
-        try:
-            url = f"{self.base_url}/metar"
-            params = {
-                'bbox': bbox,
-                'format': 'json',
-                'hours': 3
-            }
-            
-            response = self.session.get(url, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                return [self.enhance_metar(metar) for metar in data]
-        except Exception as e:
-            logging.error(f"Error fetching METARs: {e}")
-        
-        return []
-
     def get_tafs_by_bbox(self, bbox: str) -> List[Dict]:
         """Fetch TAF data by bounding box"""
         try:
@@ -462,26 +516,10 @@ class WeatherProcessor:
             response = self.session.get(url, params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
+            elif response.status_code == 204:
+                return []
         except Exception as e:
             logging.error(f"Error fetching TAFs: {e}")
-        
-        return []
-
-    def get_pireps_by_bbox(self, bbox: str) -> List[Dict]:
-        """Fetch PIREP data by bounding box"""
-        try:
-            url = f"{self.base_url}/pirep"
-            params = {
-                'bbox': bbox,
-                'format': 'json',
-                'age': 6
-            }
-            
-            response = self.session.get(url, params=params, timeout=10)
-            if response.status_code == 200:
-                return response.json()
-        except Exception as e:
-            logging.error(f"Error fetching PIREPs: {e}")
         
         return []
 
@@ -494,6 +532,8 @@ class WeatherProcessor:
             response = self.session.get(url, params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
+            elif response.status_code == 204:
+                return []
         except Exception as e:
             logging.error(f"Error fetching SIGMETs: {e}")
         
@@ -508,6 +548,8 @@ class WeatherProcessor:
             response = self.session.get(url, params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
+            elif response.status_code == 204:
+                return []
         except Exception as e:
             logging.error(f"Error fetching G-AIRMETs: {e}")
         
@@ -522,6 +564,8 @@ class WeatherProcessor:
             response = self.session.get(url, params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
+            elif response.status_code == 204:
+                return []
         except Exception as e:
             logging.error(f"Error fetching CWAs: {e}")
         
@@ -575,8 +619,14 @@ class WeatherProcessor:
         # Find nearest METAR station for reference
         nearest_metar = self.find_nearest_weather_data(lat, lon, weather_data.get('metars', []))
         
-        # Simulate historical weather conditions based on the specific time
-        simulated_weather = self.simulate_historical_weather(lat, lon, time, nearest_metar)
+        # For historical data, try to use real weather data; otherwise simulate
+        now_utc = datetime.now(timezone.utc)
+        if nearest_metar and abs((time - now_utc).total_seconds()) < 3 * 3600:  # Within 3 hours
+            # Use real weather data
+            simulated_weather = nearest_metar
+        else:
+            # Simulate historical weather conditions based on the specific time
+            simulated_weather = self.simulate_historical_weather(lat, lon, time, nearest_metar)
         
         # Enhance the simulated weather with categorization
         simulated_weather['category'] = self.categorize_weather(simulated_weather)
