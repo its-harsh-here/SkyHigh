@@ -132,18 +132,13 @@
             transform: translateY(-1px);
         }
 
-        .timeline-section {
+        .timeline-section, .weather-summary, .route-overview, .notam-section {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             padding: 1.5rem;
             margin-bottom: 2rem;
             display: none;
-        }
-
-        .timeline-container {
-            position: relative;
-            margin: 2rem 0;
         }
 
         .timeline-chart {
@@ -230,15 +225,6 @@
             color: #dc2626;
         }
 
-        .weather-summary {
-            background: white;
-            border-radius: 0.75rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            display: none;
-        }
-
         .summary-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -264,15 +250,6 @@
             color: var(--gray-600);
             text-transform: uppercase;
             font-weight: 600;
-        }
-
-        .notam-section {
-            background: white;
-            border-radius: 0.75rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            display: none;
         }
 
         .notam-grid {
@@ -338,37 +315,6 @@
             color: var(--gray-600);
         }
 
-        .loading {
-            text-align: center;
-            padding: 2rem;
-            color: var(--gray-600);
-        }
-
-        .error {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .success {
-            background: #d1fae5;
-            color: #065f46;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .route-overview {
-            background: white;
-            border-radius: 0.75rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            display: none;
-        }
-
         .route-header {
             display: flex;
             justify-content: space-between;
@@ -399,6 +345,28 @@
             font-size: 0.75rem;
             color: var(--gray-600);
             text-transform: uppercase;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--gray-600);
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
         }
 
         @media (max-width: 768px) {
@@ -744,7 +712,7 @@
         }
 
         function displayTimeline(timeline) {
-            // Create timeline chart
+            // Create timeline chart (FIXED - Using working chart code)
             createTimelineChart(timeline);
             
             // Create detailed timeline items
