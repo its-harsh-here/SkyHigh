@@ -108,24 +108,50 @@ class WeatherProcessor:
         
         # Calculate flight segments with timing
         flight_segments = []
-        current_time = datetime.now(timezone.utc)
         
-        # --- FIX: Parse user-provided departure_time strictly and check for future dates ---
-        if departure_time:
+        # --- FIXED: Parse user-provided departure_time strictly ---
+        if departure_time and departure_time.strip():
             try:
-                # Accepts ISO 8601, e.g. '2025-09-26T02:00:00Z' or '2025-09-26T02:00:00+00:00'
-                if departure_time.endswith('Z'):
-                    departure_time = departure_time.replace('Z', '+00:00')
-                current_time = datetime.fromisoformat(departure_time)
+                logging.info(f"Parsing departure_time: {departure_time}")
                 
-                # Check if departure time is in the future
+                # Handle datetime-local format from frontend (YYYY-MM-DDTHH:MM)
+                if 'T' in departure_time and len(departure_time) == 16:
+                    # Convert datetime-local to UTC
+                    current_time = datetime.fromisoformat(departure_time)
+                    # Assume input is in UTC (since aviation uses UTC)
+                    current_time = current_time.replace(tzinfo=timezone.utc)
+                elif departure_time.endswith('Z'):
+                    # ISO format with Z
+                    current_time = datetime.fromisoformat(departure_time.replace('Z', '+00:00'))
+                elif '+' in departure_time or departure_time.endswith('+00:00'):
+                    # ISO format with timezone
+                    current_time = datetime.fromisoformat(departure_time)
+                else:
+                    # Try to parse as ISO format
+                    current_time = datetime.fromisoformat(departure_time)
+                    if current_time.tzinfo is None:
+                        current_time = current_time.replace(tzinfo=timezone.utc)
+                
+                # Check if departure time is in the future (more than 1 hour ahead)
                 now_utc = datetime.now(timezone.utc)
-                if current_time > now_utc:
-                    raise ValueError('Departure time cannot be in the future. Please select a current or past time.')
+                if current_time > now_utc + timedelta(hours=1):
+                    raise ValueError('Departure time cannot be more than 1 hour in the future. Please select a current or recent time.')
+                
+                # Check if departure time is too far in the past (more than 24 hours)
+                if current_time < now_utc - timedelta(hours=24):
+                    raise ValueError('Departure time cannot be more than 24 hours in the past. Please select a more recent time.')
+                
+                logging.info(f"Successfully parsed departure_time: {current_time}")
+                
             except ValueError as ve:
-                raise ve  # Re-raise ValueError with original message
-            except Exception:
-                raise ValueError('Invalid departure_time format. Use ISO 8601 format (e.g. 2025-09-26T02:00:00Z)')
+                logging.error(f"ValueError parsing departure_time: {ve}")
+                raise ve
+            except Exception as e:
+                logging.error(f"Error parsing departure_time: {e}")
+                raise ValueError(f'Invalid departure_time format: {departure_time}. Please use the date/time picker.')
+        else:
+            current_time = datetime.now(timezone.utc)
+            logging.info(f"Using current UTC time: {current_time}")
         
         path_points = list(coordinates.keys())
         
@@ -670,6 +696,8 @@ def enhanced_flight_plan():
         waypoints = [wp.strip().upper() for wp in data.get('waypoints', []) if wp.strip()]
         cruise_speed = int(data.get('cruise_speed', 450))
         departure_time = data.get('departure_time')
+        
+        logging.info(f"Received request: departure={departure}, destination={destination}, departure_time={departure_time}")
         
         if not departure or not destination:
             return jsonify({'error': 'Departure and destination required'}), 400
