@@ -433,8 +433,11 @@
                                value="450" min="100" max="900">
                     </div>
                     <div class="form-group">
-                        <label for="departure-time">Departure Time (UTC)</label>
+                        <label for="departure-time">Departure Time (UTC) *</label>
                         <input type="datetime-local" id="departure-time" class="form-control">
+                        <small style="color: var(--gray-600); font-size: 0.8rem; margin-top: 0.25rem;">
+                            Select departure date and time (assumed UTC for aviation)
+                        </small>
                     </div>
                     <div class="form-group" style="display: flex; align-items: end;">
                         <button id="analyze-btn" class="btn btn-primary">Analyze Weather & NOTAMs</button>
@@ -568,10 +571,11 @@
         setInterval(updateClock, 1000);
         updateClock();
 
-        // Set default departure time to current time
+        // Set default departure time to 2 hours ago (to ensure it's in the past)
         function setDefaultDepartureTime() {
             const now = new Date();
-            const utcTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 hours ago
+            const utcTime = new Date(twoHoursAgo.getTime() - twoHoursAgo.getTimezoneOffset() * 60000);
             departureTimeInput.value = utcTime.toISOString().slice(0, 16);
         }
         setDefaultDepartureTime();
@@ -607,12 +611,19 @@
             const destination = destinationInput.value.trim().toUpperCase();
             const waypoints = waypointsInput.value.trim().split(',').map(w => w.trim().toUpperCase()).filter(w => w);
             const cruiseSpeed = parseInt(cruiseSpeedInput.value) || 450;
-            const departureTime = departureTimeInput.value;
+            const departureTime = departureTimeInput.value; // Get the raw datetime-local value
             
             if (!departure || !destination) {
                 showError('Please enter both departure and destination airports');
                 return;
             }
+
+            if (!departureTime) {
+                showError('Please select a departure date and time');
+                return;
+            }
+            
+            console.log('Sending departure_time:', departureTime); // Debug log
             
             showLoading();
             
@@ -627,12 +638,13 @@
                         destination,
                         waypoints,
                         cruise_speed: cruiseSpeed,
-                        departure_time: departureTime ? new Date(departureTime).toISOString() : null
+                        departure_time: departureTime  // Send the datetime-local value directly
                     })
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
                 }
                 
                 const data = await response.json();
@@ -644,7 +656,7 @@
                 displayNOTAMs(data.notams || []);
                 displayTimeline(data.timeline);
                 
-                showSuccess(`Comprehensive analysis completed: ${data.timeline.length} time intervals, ${data.notams?.length || 0} NOTAMs`);
+                showSuccess(`Analysis completed: ${data.timeline.length} time intervals, ${data.notams?.length || 0} NOTAMs`);
                 
             } catch (error) {
                 console.error('Error analyzing weather timeline:', error);
@@ -712,7 +724,7 @@
         }
 
         function displayTimeline(timeline) {
-            // Create timeline chart (FIXED - Using working chart code)
+            // Create timeline chart
             createTimelineChart(timeline);
             
             // Create detailed timeline items
@@ -868,7 +880,7 @@
         analyzeBtn.addEventListener('click', analyzeWeatherTimeline);
 
         // Allow Enter key in inputs
-        [departureInput, destinationInput, waypointsInput, cruiseSpeedInput, departureTimeInput].forEach(input => {
+        [departureInput, destinationInput, waypointsInput, cruiseSpeedInput].forEach(input => {
             input.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') analyzeBtn.click();
             });
