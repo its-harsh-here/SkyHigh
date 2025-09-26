@@ -216,9 +216,8 @@ class SimpleNLPProcessor:
             return flight_plan
     
     def generate_risk_assessment(self, timeline: List[Dict]) -> Dict:
-        """Generate automated risk assessment with scoring"""
+        """Generate automated risk assessment with scoring - REMOVED risk_factors"""
         try:
-            risk_factors = []
             severity_scores = {'Clear': 1, 'Significant': 3, 'Severe': 5}
             
             total_score = 0
@@ -234,7 +233,6 @@ class SimpleNLPProcessor:
                 
                 if severity == 'Severe':
                     severe_segments += 1
-                    risk_factors.append(f"Severe weather conditions during {segment.get('location_description', 'flight segment')}")
                 elif severity == 'Significant':
                     significant_segments += 1
             
@@ -252,18 +250,10 @@ class SimpleNLPProcessor:
                 risk_level = "LOW RISK"
                 recommendation = "Conditions acceptable for flight operations"
             
-            # Additional risk factors
-            if severe_segments > len(timeline) * 0.2:  # More than 20% severe
-                risk_factors.append(f"High proportion of severe weather ({severe_segments} segments)")
-            
-            if significant_segments > len(timeline) * 0.5:  # More than 50% significant
-                risk_factors.append(f"Extended periods of significant weather ({significant_segments} segments)")
-            
             return {
                 'risk_level': risk_level,
                 'risk_percentage': round(risk_percentage, 1),
                 'recommendation': recommendation,
-                'risk_factors': risk_factors,
                 'severe_segments': severe_segments,
                 'significant_segments': significant_segments,
                 'total_segments': len(timeline)
@@ -275,7 +265,6 @@ class SimpleNLPProcessor:
                 'risk_level': 'UNKNOWN',
                 'risk_percentage': 0,
                 'recommendation': 'Unable to assess risk due to processing error',
-                'risk_factors': [],
                 'severe_segments': 0,
                 'significant_segments': 0,
                 'total_segments': 0
@@ -821,7 +810,7 @@ class WeatherProcessor:
         return timeline
 
     def get_conditions_for_location_time(self, lat: float, lon: float, time: datetime, weather_data: Dict) -> Dict:
-        """Get weather conditions for specific location and time"""
+        """Get weather conditions for specific location and time - FIXED NEAREST STATION"""
         nearest_metar = self.find_nearest_weather_data(lat, lon, weather_data.get('metars', []))
         
         now_utc = datetime.now(timezone.utc)
@@ -851,13 +840,29 @@ class WeatherProcessor:
         else:
             severity = base_severity
         
+        # FIX: Get proper nearest station from real METAR or use a better fallback
+        nearest_station_id = None
+        if nearest_metar and nearest_metar.get('icaoId'):
+            nearest_station_id = nearest_metar.get('icaoId')
+        elif simulated_weather.get('icaoId') and simulated_weather['icaoId'] != 'SIMULATED':
+            nearest_station_id = simulated_weather.get('icaoId')
+        else:
+            # Try to find the closest airport from our route
+            min_distance = float('inf')
+            for metar in weather_data.get('metars', []):
+                if metar.get('lat') and metar.get('lon') and metar.get('icaoId'):
+                    distance = self.haversine_distance(lat, lon, metar['lat'], metar['lon'])
+                    if distance < min_distance:
+                        min_distance = distance
+                        nearest_station_id = metar['icaoId']
+        
         return {
             'severity': severity,
             'condition': condition,
             'description': f"Current: {condition}",
             'hazards': all_hazards,
             'pirep_count': len(pirep_reports),
-            'nearest_station': simulated_weather.get('icaoId'),
+            'nearest_station': nearest_station_id or 'Unknown',
             'natural_language': simulated_weather.get('natural_language', '')
         }
 
@@ -898,19 +903,28 @@ class WeatherProcessor:
         return warnings[:1]
 
     def find_nearest_weather_data(self, lat: float, lon: float, weather_list: List[Dict]) -> Optional[Dict]:
-        """Find nearest weather station to given coordinates"""
+        """Find nearest weather station to given coordinates - FIXED"""
         nearest = None
         min_distance = float('inf')
         
         for weather in weather_list:
-            w_lat = weather.get('lat', 0)
-            w_lon = weather.get('lon', 0)
+            w_lat = weather.get('lat')
+            w_lon = weather.get('lon')
             
-            if w_lat and w_lon:
-                distance = self.haversine_distance(lat, lon, w_lat, w_lon)
-                if distance < min_distance and distance < 100:
-                    min_distance = distance
-                    nearest = weather
+            # Ensure we have valid coordinates
+            if w_lat is not None and w_lon is not None:
+                try:
+                    # Convert to float if they're strings
+                    w_lat = float(w_lat)
+                    w_lon = float(w_lon)
+                    
+                    distance = self.haversine_distance(lat, lon, w_lat, w_lon)
+                    if distance < min_distance and distance < 200:  # Increase search radius to 200 NM
+                        min_distance = distance
+                        nearest = weather
+                except (ValueError, TypeError):
+                    # Skip if coordinates can't be converted to float
+                    continue
         
         return nearest
 
@@ -919,13 +933,18 @@ class WeatherProcessor:
         nearby_pireps = []
         
         for pirep in pireps:
-            p_lat = pirep.get('lat', 0)
-            p_lon = pirep.get('lon', 0)
+            p_lat = pirep.get('lat')
+            p_lon = pirep.get('lon')
             
-            if p_lat and p_lon:
-                distance = self.haversine_distance(lat, lon, p_lat, p_lon)
-                if distance < 50:
-                    nearby_pireps.append(pirep)
+            if p_lat is not None and p_lon is not None:
+                try:
+                    p_lat = float(p_lat)
+                    p_lon = float(p_lon)
+                    distance = self.haversine_distance(lat, lon, p_lat, p_lon)
+                    if distance < 50:
+                        nearby_pireps.append(pirep)
+                except (ValueError, TypeError):
+                    continue
         
         return nearby_pireps
 
