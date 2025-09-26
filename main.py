@@ -281,95 +281,6 @@ class SimpleNLPProcessor:
                 'total_segments': 0
             }
 
-class SimpleWeatherPredictor:
-    """Simple weather prediction using basic patterns and rules"""
-    
-    def __init__(self):
-        pass
-    
-    def predict_turbulence(self, weather_conditions: Dict) -> Dict:
-        """Simple turbulence prediction based on weather conditions"""
-        try:
-            wind_speed = weather_conditions.get('wspd', 0)
-            wind_gust = weather_conditions.get('wgst', 0) 
-            weather_string = weather_conditions.get('wxString', '')
-            
-            # Simple rule-based turbulence prediction
-            turbulence_score = 0
-            
-            # Wind factor
-            if wind_speed > 30:
-                turbulence_score += 3
-            elif wind_speed > 20:
-                turbulence_score += 2
-            elif wind_speed > 10:
-                turbulence_score += 1
-            
-            # Gust factor
-            if wind_gust and wind_gust > wind_speed + 10:
-                turbulence_score += 2
-            
-            # Weather factor
-            if 'TS' in weather_string:
-                turbulence_score += 3
-            elif any(wx in weather_string for wx in ['RA', 'SN']):
-                turbulence_score += 1
-            
-            # Determine turbulence level
-            if turbulence_score >= 6:
-                level = 'Severe'
-                probability = min(90, 60 + turbulence_score * 5)
-            elif turbulence_score >= 4:
-                level = 'Moderate'
-                probability = min(80, 40 + turbulence_score * 5)
-            elif turbulence_score >= 2:
-                level = 'Light'
-                probability = min(60, 20 + turbulence_score * 10)
-            else:
-                level = 'None'
-                probability = max(10, 30 - turbulence_score * 10)
-            
-            return {
-                'turbulence_level': level,
-                'probability': round(probability, 1),
-                'confidence': round(min(95, max(60, 70 + turbulence_score * 5)), 1)
-            }
-            
-        except Exception as e:
-            logging.error(f"Error predicting turbulence: {e}")
-            return {'turbulence_level': 'Unknown', 'probability': 0, 'confidence': 0}
-    
-    def predict_weather_evolution(self, current_conditions: Dict, hours_ahead: int = 2) -> List[Dict]:
-        """Simple weather evolution prediction"""
-        try:
-            predictions = []
-            current_severity = current_conditions.get('category', 'Clear')
-            
-            for hour in range(1, hours_ahead + 1):
-                # Simple degradation/improvement model
-                if current_severity == 'Clear':
-                    predicted_severity = random.choices(['Clear', 'Significant'], weights=[0.8, 0.2])[0]
-                elif current_severity == 'Significant':
-                    predicted_severity = random.choices(['Clear', 'Significant', 'Severe'], weights=[0.3, 0.5, 0.2])[0]
-                else:  # Severe
-                    predicted_severity = random.choices(['Significant', 'Severe'], weights=[0.4, 0.6])[0]
-                
-                # Confidence decreases with time
-                confidence = max(50, 90 - hour * 15)
-                
-                predictions.append({
-                    'hour': hour,
-                    'predicted_severity': predicted_severity,
-                    'confidence': round(confidence, 1),
-                    'timestamp': (datetime.now(timezone.utc) + timedelta(hours=hour)).isoformat()
-                })
-            
-            return predictions
-            
-        except Exception as e:
-            logging.error(f"Error predicting weather evolution: {e}")
-            return []
-
 # Enhanced WeatherProcessor with simplified NLP
 class WeatherProcessor:
     """Process and categorize aviation weather data with NOTAM support"""
@@ -383,7 +294,6 @@ class WeatherProcessor:
         
         # Initialize simplified processors
         self.nlp_processor = SimpleNLPProcessor()
-        self.weather_predictor = SimpleWeatherPredictor()
 
     def categorize_weather(self, metar_data: dict) -> str:
         """Categorize weather conditions into Clear, Significant, or Severe"""
@@ -942,9 +852,6 @@ class WeatherProcessor:
         else:
             severity = base_severity
         
-        # Add simple predictions
-        turbulence_prediction = self.weather_predictor.predict_turbulence(simulated_weather)
-        
         return {
             'severity': severity,
             'condition': condition,
@@ -952,7 +859,6 @@ class WeatherProcessor:
             'hazards': all_hazards,
             'pirep_count': len(pirep_reports),
             'nearest_station': simulated_weather.get('icaoId'),
-            'turbulence_forecast': turbulence_prediction,
             'natural_language': simulated_weather.get('natural_language', '')
         }
 
@@ -1098,7 +1004,7 @@ def process_natural_language():
 
 @app.route('/api/enhanced-flight-plan', methods=['POST'])
 def enhanced_flight_plan():
-    """Enhanced flight plan analysis with comprehensive weather timeline, NOTAMs, NLP, and ML"""
+    """Enhanced flight plan analysis with comprehensive weather timeline, NOTAMs, and NLP"""
     try:
         data = request.get_json()
         departure = data.get('departure', '').upper()
@@ -1153,13 +1059,6 @@ def enhanced_flight_plan():
         # Generate risk assessment
         risk_assessment = weather_processor.nlp_processor.generate_risk_assessment(timeline)
         
-        # Generate simple weather predictions
-        weather_predictions = []
-        if timeline:
-            # Use first timeline item for prediction base
-            base_conditions = timeline[0].get('conditions', {})
-            weather_predictions = weather_processor.weather_predictor.predict_weather_evolution(base_conditions, 3)
-        
         return jsonify({
             'route': {
                 'departure': departure,
@@ -1191,8 +1090,7 @@ def enhanced_flight_plan():
             'notams': weather_data.get('notams', []),
             # Enhanced features
             'nlp_briefing_summary': weather_briefing_summary,
-            'risk_assessment': risk_assessment,
-            'weather_predictions': weather_predictions
+            'risk_assessment': risk_assessment
         })
         
     except Exception as e:
