@@ -863,7 +863,9 @@ class WeatherProcessor:
             'hazards': all_hazards,
             'pirep_count': len(pirep_reports),
             'nearest_station': nearest_station_id or 'Unknown',
-            'natural_language': simulated_weather.get('natural_language', '')
+            'raw_metar': nearest_metar.get('rawOb', '') if nearest_metar else '',
+            'raw_taf': self.get_nearest_taf_raw(lat, lon, weather_data.get('tafs', []))
+
         }
 
     def simulate_hazards_for_conditions(self, weather: Dict, weather_data: Dict) -> List[str]:
