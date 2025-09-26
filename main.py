@@ -281,7 +281,6 @@ class SimpleNLPProcessor:
                 'total_segments': 0
             }
 
-# Enhanced WeatherProcessor with simplified NLP
 class WeatherProcessor:
     """Process and categorize aviation weather data with NOTAM support"""
     
