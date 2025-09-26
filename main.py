@@ -111,6 +111,116 @@ class SimpleNLPProcessor:
             logging.error(f"Error decoding METAR: {e}")
             return f"Weather conditions reported: {metar_text}"
     
+    def decode_pirep_to_natural_language(self, pirep_text: str) -> str:
+        """Convert PIREP code to natural language description"""
+        try:
+            decoded_parts = []
+            
+            # Basic PIREP patterns
+            if '/TP' in pirep_text:
+                aircraft_match = re.search(r'/TP\s*([A-Z0-9]+)', pirep_text)
+                if aircraft_match:
+                    decoded_parts.append(f"Aircraft: {aircraft_match.group(1)}")
+            
+            if '/FL' in pirep_text:
+                altitude_match = re.search(r'/FL(\d+)', pirep_text)
+                if altitude_match:
+                    altitude = int(altitude_match.group(1)) * 100
+                    decoded_parts.append(f"Flight Level: {altitude} feet")
+            
+            if '/SK' in pirep_text:
+                sky_match = re.search(r'/SK\s*([^/]+)', pirep_text)
+                if sky_match:
+                    decoded_parts.append(f"Sky condition: {sky_match.group(1).strip()}")
+            
+            if '/WX' in pirep_text:
+                weather_match = re.search(r'/WX\s*([^/]+)', pirep_text)
+                if weather_match:
+                    decoded_parts.append(f"Weather: {weather_match.group(1).strip()}")
+            
+            if '/TB' in pirep_text:
+                turb_match = re.search(r'/TB\s*([^/]+)', pirep_text)
+                if turb_match:
+                    decoded_parts.append(f"Turbulence: {turb_match.group(1).strip()}")
+            
+            if '/IC' in pirep_text:
+                ice_match = re.search(r'/IC\s*([^/]+)', pirep_text)
+                if ice_match:
+                    decoded_parts.append(f"Icing: {ice_match.group(1).strip()}")
+            
+            return ". ".join(decoded_parts) + "." if decoded_parts else f"Pilot report: {pirep_text}"
+            
+        except Exception as e:
+            logging.error(f"Error decoding PIREP: {e}")
+            return f"Pilot report: {pirep_text}"
+    
+    def decode_taf_to_natural_language(self, taf_text: str) -> str:
+        """Convert TAF code to natural language description"""
+        try:
+            decoded_parts = []
+            
+            # Airport code
+            airport_match = re.search(self.metar_patterns['airport'], taf_text)
+            if airport_match:
+                decoded_parts.append(f"Forecast for: {airport_match.group(1)}")
+            
+            # Valid time
+            valid_match = re.search(r'(\d{6}/\d{6})', taf_text)
+            if valid_match:
+                valid_time = valid_match.group(1)
+                start_day = valid_time[:2]
+                start_hour = valid_time[2:4]
+                end_day = valid_time[7:9]
+                end_hour = valid_time[9:11]
+                decoded_parts.append(f"Valid from day {start_day} at {start_hour}:00Z to day {end_day} at {end_hour}:00Z")
+            
+            # Wind
+            wind_match = re.search(self.metar_patterns['wind'], taf_text)
+            if wind_match:
+                direction = wind_match.group(1)
+                speed = wind_match.group(2)
+                gust = wind_match.group(3)
+                wind_desc = f"Wind forecast: {direction} degrees at {speed} knots"
+                if gust:
+                    wind_desc += f" gusting to {gust[1:]} knots"
+                decoded_parts.append(wind_desc)
+            
+            # Visibility
+            vis_match = re.search(self.metar_patterns['visibility'], taf_text)
+            if vis_match:
+                if vis_match.group(1):
+                    decoded_parts.append(f"Visibility forecast: {vis_match.group(1)} statute miles")
+                elif vis_match.group(2):
+                    vis_meters = int(vis_match.group(2))
+                    if vis_meters >= 9999:
+                        decoded_parts.append("Visibility forecast: greater than 10 kilometers")
+                    else:
+                        decoded_parts.append(f"Visibility forecast: {vis_meters} meters")
+            
+            # Weather phenomena
+            weather_matches = re.findall(self.metar_patterns['weather'], taf_text)
+            if weather_matches:
+                weather_conditions = []
+                for match in weather_matches:
+                    for code, description in self.weather_descriptions.items():
+                        if code in match:
+                            weather_conditions.append(description)
+                if weather_conditions:
+                    decoded_parts.append(f"Weather forecast: {', '.join(set(weather_conditions))}")
+            
+            # Temporary conditions
+            if 'TEMPO' in taf_text:
+                decoded_parts.append("Temporary conditions expected during forecast period")
+            
+            if 'BECMG' in taf_text:
+                decoded_parts.append("Conditions becoming different during forecast period")
+            
+            return ". ".join(decoded_parts) + "." if decoded_parts else f"Terminal forecast: {taf_text}"
+            
+        except Exception as e:
+            logging.error(f"Error decoding TAF: {e}")
+            return f"Terminal forecast: {taf_text}"
+    
     def summarize_weather_briefing(self, weather_data: Dict) -> str:
         """Create natural language summary of weather briefing"""
         try:
@@ -809,13 +919,15 @@ class WeatherProcessor:
                     'wind_speed': conditions.get('wind_speed', 0),
                     'wind_gust': conditions.get('wind_gust', 0),
                     'visibility': conditions.get('visibility', 10),
-                    'temperature': conditions.get('temperature', 15)
+                    'temperature': conditions.get('temperature', 15),
+                    # Raw weather data for detailed view
+                    'raw_data': conditions.get('raw_data', {})
                 })
         
         return timeline
 
     def get_conditions_for_location_time(self, lat: float, lon: float, time: datetime, weather_data: Dict) -> Dict:
-        """Get weather conditions for specific location and time with enhanced data"""
+        """Get weather conditions for specific location and time with enhanced data and raw weather"""
         nearest_metar = self.find_nearest_weather_data(lat, lon, weather_data.get('metars', []))
         
         now_utc = datetime.now(timezone.utc)
@@ -826,7 +938,11 @@ class WeatherProcessor:
         
         simulated_weather['category'] = self.categorize_weather(simulated_weather)
         
-        pirep_reports = self.get_pireps_near_location(lat, lon, weather_data.get('pireps', []))
+        # Get nearby raw weather data
+        nearby_metars = self.get_nearby_metars(lat, lon, weather_data.get('metars', []))
+        nearby_pireps = self.get_pireps_near_location(lat, lon, weather_data.get('pireps', []))
+        nearby_tafs = self.get_nearby_tafs(lat, lon, weather_data.get('tafs', []))
+        
         hazards = self.simulate_hazards_for_conditions(simulated_weather, weather_data)
         notam_warnings = self.check_notams_for_location(lat, lon, weather_data.get('notams', []))
         
@@ -881,15 +997,67 @@ class WeatherProcessor:
             'condition': condition,
             'description': f"Current: {condition}",
             'hazards': all_hazards,
-            'pirep_count': len(pirep_reports),
+            'pirep_count': len(nearby_pireps),
             'nearest_station': nearest_station_id or 'Unknown',
             'natural_language': simulated_weather.get('natural_language', ''),
             # Enhanced data for additional charts
             'wind_speed': simulated_weather.get('wspd', 0) or 0,
             'wind_gust': simulated_weather.get('wgst', 0) or 0,
             'visibility': visibility_val,
-            'temperature': simulated_weather.get('temp', 15) or 15
+            'temperature': simulated_weather.get('temp', 15) or 15,
+            # Raw weather data for detailed buttons
+            'raw_data': {
+                'metars': nearby_metars[:3],  # Limit to 3 nearest
+                'pireps': nearby_pireps[:3],  # Limit to 3 nearest
+                'tafs': nearby_tafs[:3],      # Limit to 3 nearest
+            }
         }
+
+    def get_nearby_metars(self, lat: float, lon: float, metars: List[Dict], max_distance: float = 100) -> List[Dict]:
+        """Get METARs near specified location"""
+        nearby = []
+        for metar in metars:
+            m_lat = metar.get('lat')
+            m_lon = metar.get('lon')
+            if m_lat is not None and m_lon is not None:
+                try:
+                    m_lat = float(m_lat)
+                    m_lon = float(m_lon)
+                    distance = self.haversine_distance(lat, lon, m_lat, m_lon)
+                    if distance <= max_distance:
+                        nearby.append({
+                            'station': metar.get('icaoId', 'Unknown'),
+                            'raw': metar.get('rawOb', ''),
+                            'distance': round(distance, 1),
+                            'time': metar.get('reportTime', ''),
+                            'nlp': self.nlp_processor.decode_metar_to_natural_language(metar.get('rawOb', ''))
+                        })
+                except (ValueError, TypeError):
+                    continue
+        return sorted(nearby, key=lambda x: x['distance'])
+
+    def get_nearby_tafs(self, lat: float, lon: float, tafs: List[Dict], max_distance: float = 100) -> List[Dict]:
+        """Get TAFs near specified location"""
+        nearby = []
+        for taf in tafs:
+            t_lat = taf.get('lat')
+            t_lon = taf.get('lon')
+            if t_lat is not None and t_lon is not None:
+                try:
+                    t_lat = float(t_lat)
+                    t_lon = float(t_lon)
+                    distance = self.haversine_distance(lat, lon, t_lat, t_lon)
+                    if distance <= max_distance:
+                        nearby.append({
+                            'station': taf.get('icaoId', 'Unknown'),
+                            'raw': taf.get('rawTAF', ''),
+                            'distance': round(distance, 1),
+                            'valid_time': taf.get('validTime', ''),
+                            'nlp': self.nlp_processor.decode_taf_to_natural_language(taf.get('rawTAF', ''))
+                        })
+                except (ValueError, TypeError):
+                    continue
+        return sorted(nearby, key=lambda x: x['distance'])
 
     def simulate_hazards_for_conditions(self, weather: Dict, weather_data: Dict) -> List[str]:
         """Simulate hazards based on weather conditions"""
@@ -953,7 +1121,7 @@ class WeatherProcessor:
         
         return nearest
 
-    def get_pireps_near_location(self, lat: float, lon: float, pireps: List[Dict]) -> List[Dict]:
+    def get_pireps_near_location(self, lat: float, lon: float, pireps: List[Dict], max_distance: float = 50) -> List[Dict]:
         """Get PIREPs near specified location"""
         nearby_pireps = []
         
@@ -966,12 +1134,18 @@ class WeatherProcessor:
                     p_lat = float(p_lat)
                     p_lon = float(p_lon)
                     distance = self.haversine_distance(lat, lon, p_lat, p_lon)
-                    if distance < 50:
-                        nearby_pireps.append(pirep)
+                    if distance <= max_distance:
+                        nearby_pireps.append({
+                            'station': pirep.get('icaoId', 'Unknown'),
+                            'raw': pirep.get('rawOb', ''),
+                            'distance': round(distance, 1),
+                            'time': pirep.get('reportTime', ''),
+                            'nlp': self.nlp_processor.decode_pirep_to_natural_language(pirep.get('rawOb', ''))
+                        })
                 except (ValueError, TypeError):
                     continue
         
-        return nearby_pireps
+        return sorted(nearby_pireps, key=lambda x: x['distance'])
 
     def get_weather_description(self, metar: Dict) -> str:
         """Get human-readable weather description from METAR"""
@@ -1020,30 +1194,6 @@ def index():
 @app.route('/<path:filename>')
 def static_files(filename):
     return send_from_directory('.', filename)
-
-# NLP Flight Plan Processing Endpoint
-@app.route('/api/process-natural-language', methods=['POST'])
-def process_natural_language():
-    """Process natural language flight plan input"""
-    try:
-        data = request.get_json()
-        text = data.get('text', '')
-        
-        if not text:
-            return jsonify({'error': 'No text provided'}), 400
-        
-        # Extract flight plan from natural language
-        flight_plan = weather_processor.nlp_processor.extract_flight_plan_from_text(text)
-        
-        return jsonify({
-            'flight_plan': flight_plan,
-            'original_text': text,
-            'success': True
-        })
-        
-    except Exception as e:
-        logging.error(f"Error processing natural language: {e}")
-        return jsonify({'error': f'Processing error: {str(e)}'}), 500
 
 @app.route('/api/enhanced-flight-plan', methods=['POST'])
 def enhanced_flight_plan():
