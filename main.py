@@ -10,58 +10,43 @@ import math
 import concurrent.futures
 import hashlib
 import random
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
-import nltk
-from nltk.tokenize import sent_tokenize, word_tokenize
-from nltk.corpus import stopwords
-from textblob import TextBlob
-import spacy
-from transformers import pipeline
-import warnings
-warnings.filterwarnings('ignore')
-
-# Download required NLTK data
-try:
-    nltk.download('punkt', quiet=True)
-    nltk.download('stopwords', quiet=True)
-    nltk.download('vader_lexicon', quiet=True)
-except:
-    pass
 
 app = Flask(__name__)
 CORS(app)
 logging.basicConfig(level=logging.INFO)
 
-class NLPWeatherProcessor:
-    """Advanced NLP processor for weather reports and flight plan analysis"""
+class SimpleNLPProcessor:
+    """Simple NLP processor using regex patterns and basic text analysis"""
     
     def __init__(self):
-        try:
-            # Initialize NLP models
-            self.nlp = spacy.load("en_core_web_sm")
-            self.sentiment_analyzer = pipeline("sentiment-analysis")
-            self.summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-        except Exception as e:
-            logging.error(f"Error initializing NLP models: {e}")
-            self.nlp = None
-            self.sentiment_analyzer = None
-            self.summarizer = None
+        self.metar_patterns = {
+            'airport': r'\b([A-Z]{4})\b',
+            'time': r'(\d{6}Z)',
+            'wind': r'(\d{3})(\d{2,3})(G\d{2,3})?KT',
+            'visibility': r'(\d+)SM|(\d{4})\s',
+            'weather': r'([-+]?(?:TS|RA|SN|FG|BR|DZ|IC|PL|GR))',
+            'clouds': r'(FEW|SCT|BKN|OVC)(\d{3})',
+            'temperature': r'(\d{2}|M\d{2})/(\d{2}|M\d{2})'
+        }
+        
+        self.weather_descriptions = {
+            'RA': 'rain', 'SN': 'snow', 'FG': 'fog', 'BR': 'mist',
+            'TS': 'thunderstorm', 'DZ': 'drizzle', 'IC': 'ice crystals',
+            'PL': 'ice pellets', 'GR': 'hail', '+': 'heavy', '-': 'light'
+        }
     
     def decode_metar_to_natural_language(self, metar_text: str) -> str:
-        """Convert METAR code to natural language description"""
+        """Convert METAR code to simple natural language description using regex"""
         try:
-            # METAR decoding patterns
             decoded_parts = []
             
             # Airport code
-            airport_match = re.search(r'\b([A-Z]{4})\b', metar_text)
+            airport_match = re.search(self.metar_patterns['airport'], metar_text)
             if airport_match:
                 decoded_parts.append(f"Airport: {airport_match.group(1)}")
             
             # Time
-            time_match = re.search(r'(\d{6}Z)', metar_text)
+            time_match = re.search(self.metar_patterns['time'], metar_text)
             if time_match:
                 time_str = time_match.group(1)
                 day = time_str[:2]
@@ -70,7 +55,7 @@ class NLPWeatherProcessor:
                 decoded_parts.append(f"Observed on day {day} at {hour}:{minute} UTC")
             
             # Wind
-            wind_match = re.search(r'(\d{3})(\d{2,3})(G\d{2,3})?KT', metar_text)
+            wind_match = re.search(self.metar_patterns['wind'], metar_text)
             if wind_match:
                 direction = wind_match.group(1)
                 speed = wind_match.group(2)
@@ -81,7 +66,7 @@ class NLPWeatherProcessor:
                 decoded_parts.append(wind_desc)
             
             # Visibility
-            vis_match = re.search(r'(\d+)SM|(\d{4})\s', metar_text)
+            vis_match = re.search(self.metar_patterns['visibility'], metar_text)
             if vis_match:
                 if vis_match.group(1):
                     decoded_parts.append(f"Visibility {vis_match.group(1)} statute miles")
@@ -92,23 +77,19 @@ class NLPWeatherProcessor:
                     else:
                         decoded_parts.append(f"Visibility {vis_meters} meters")
             
-            # Weather phenomena
-            weather_codes = {
-                'RA': 'rain', 'SN': 'snow', 'FG': 'fog', 'BR': 'mist',
-                'TS': 'thunderstorm', 'DZ': 'drizzle', 'IC': 'ice crystals',
-                'PL': 'ice pellets', 'GR': 'hail', '+': 'heavy', '-': 'light'
-            }
-            
-            weather_conditions = []
-            for code, description in weather_codes.items():
-                if code in metar_text:
-                    weather_conditions.append(description)
-            
-            if weather_conditions:
-                decoded_parts.append(f"Weather: {', '.join(weather_conditions)}")
+            # Weather conditions
+            weather_matches = re.findall(self.metar_patterns['weather'], metar_text)
+            if weather_matches:
+                weather_conditions = []
+                for match in weather_matches:
+                    for code, description in self.weather_descriptions.items():
+                        if code in match:
+                            weather_conditions.append(description)
+                if weather_conditions:
+                    decoded_parts.append(f"Weather: {', '.join(set(weather_conditions))}")
             
             # Clouds
-            cloud_matches = re.findall(r'(FEW|SCT|BKN|OVC)(\d{3})', metar_text)
+            cloud_matches = re.findall(self.metar_patterns['clouds'], metar_text)
             if cloud_matches:
                 cloud_desc = []
                 cloud_types = {'FEW': 'few', 'SCT': 'scattered', 'BKN': 'broken', 'OVC': 'overcast'}
@@ -117,14 +98,14 @@ class NLPWeatherProcessor:
                     cloud_desc.append(f"{cloud_types[coverage]} clouds at {altitude} feet")
                 decoded_parts.append(f"Clouds: {', '.join(cloud_desc)}")
             
-            # Temperature and dew point
-            temp_match = re.search(r'(\d{2}|M\d{2})/(\d{2}|M\d{2})', metar_text)
+            # Temperature
+            temp_match = re.search(self.metar_patterns['temperature'], metar_text)
             if temp_match:
                 temp = temp_match.group(1).replace('M', '-')
                 dew = temp_match.group(2).replace('M', '-')
                 decoded_parts.append(f"Temperature {temp}°C, dew point {dew}°C")
             
-            return ". ".join(decoded_parts) + "."
+            return ". ".join(decoded_parts) + "." if decoded_parts else f"Weather conditions reported: {metar_text}"
             
         except Exception as e:
             logging.error(f"Error decoding METAR: {e}")
@@ -181,9 +162,8 @@ class NLPWeatherProcessor:
             return "Weather briefing summary unavailable due to processing error."
     
     def extract_flight_plan_from_text(self, text: str) -> Dict:
-        """Extract flight plan information from natural language text"""
+        """Extract flight plan information from natural language text using regex"""
         try:
-            # Initialize result
             flight_plan = {
                 'departure': None,
                 'destination': None,
@@ -203,22 +183,29 @@ class NLPWeatherProcessor:
                     flight_plan['waypoints'] = airports[1:-1]
             
             # Extract cruise speed
-            speed_match = re.search(r'(\d{3,4})\s*(knots?|kts?|mph|speed)', text.lower())
-            if speed_match:
-                flight_plan['cruise_speed'] = int(speed_match.group(1))
+            speed_patterns = [
+                r'(\d{3,4})\s*(?:knots?|kts?|kt)',
+                r'(?:speed|cruise)\s*(?:of\s*)?(\d{3,4})',
+                r'(\d{3,4})\s*mph'
+            ]
             
-            # Extract departure time
+            for pattern in speed_patterns:
+                speed_match = re.search(pattern, text.lower())
+                if speed_match:
+                    flight_plan['cruise_speed'] = int(speed_match.group(1))
+                    break
+            
+            # Extract departure time patterns
             time_patterns = [
-                r'(\d{1,2}):(\d{2})\s*(am|pm|utc|z)?',
-                r'at\s*(\d{1,2})\s*(am|pm|utc)',
-                r'(\d{4})z',
-                r'(\d{1,2})\s*o\'?clock'
+                r'(?:at\s*)?(\d{1,2}):(\d{2})\s*(?:am|pm|utc|z)?',
+                r'(?:at\s*)?(\d{4})z',
+                r'(?:at\s*)?(\d{1,2})\s*(?:am|pm|o\'?clock)',
+                r'(?:tomorrow|today|yesterday)\s*(?:at\s*)?(\d{1,2}):?(\d{2})?'
             ]
             
             for pattern in time_patterns:
                 time_match = re.search(pattern, text.lower())
                 if time_match:
-                    # Simple time extraction - could be enhanced
                     flight_plan['departure_time'] = time_match.group(0)
                     break
             
@@ -294,169 +281,96 @@ class NLPWeatherProcessor:
                 'total_segments': 0
             }
 
-class MLWeatherPredictor:
-    """Machine learning models for weather prediction and pattern analysis"""
+class SimpleWeatherPredictor:
+    """Simple weather prediction using basic patterns and rules"""
     
     def __init__(self):
-        self.turbulence_model = None
-        self.weather_pattern_model = None
-        self.scaler = StandardScaler()
-        self._initialize_models()
-    
-    def _initialize_models(self):
-        """Initialize pre-trained ML models"""
-        try:
-            # Initialize turbulence prediction model
-            self.turbulence_model = RandomForestClassifier(n_estimators=100, random_state=42)
-            
-            # Initialize weather pattern model
-            self.weather_pattern_model = RandomForestClassifier(n_estimators=50, random_state=42)
-            
-            # Train with sample data (in real implementation, use historical weather data)
-            self._train_sample_models()
-            
-        except Exception as e:
-            logging.error(f"Error initializing ML models: {e}")
-    
-    def _train_sample_models(self):
-        """Train models with synthetic sample data"""
-        try:
-            # Generate synthetic training data for demonstration
-            np.random.seed(42)
-            n_samples = 1000
-            
-            # Features: wind_speed, visibility, pressure_change, temperature, humidity
-            X = np.random.randn(n_samples, 5)
-            
-            # Turbulence labels (0=None, 1=Light, 2=Moderate, 3=Severe)
-            turbulence_y = np.random.choice([0, 1, 2, 3], n_samples, p=[0.6, 0.25, 0.12, 0.03])
-            
-            # Weather pattern labels (0=Clear, 1=Significant, 2=Severe)
-            weather_y = np.random.choice([0, 1, 2], n_samples, p=[0.5, 0.35, 0.15])
-            
-            # Scale features
-            X_scaled = self.scaler.fit_transform(X)
-            
-            # Train models
-            self.turbulence_model.fit(X_scaled, turbulence_y)
-            self.weather_pattern_model.fit(X_scaled, weather_y)
-            
-            logging.info("ML models trained successfully")
-            
-        except Exception as e:
-            logging.error(f"Error training models: {e}")
+        pass
     
     def predict_turbulence(self, weather_conditions: Dict) -> Dict:
-        """Predict turbulence probability based on weather conditions"""
+        """Simple turbulence prediction based on weather conditions"""
         try:
-            if not self.turbulence_model:
-                return {'turbulence_level': 'Unknown', 'probability': 0, 'confidence': 0}
+            wind_speed = weather_conditions.get('wspd', 0)
+            wind_gust = weather_conditions.get('wgst', 0) 
+            weather_string = weather_conditions.get('wxString', '')
             
-            # Extract features from weather conditions
-            features = self._extract_features(weather_conditions)
-            features_scaled = self.scaler.transform([features])
+            # Simple rule-based turbulence prediction
+            turbulence_score = 0
             
-            # Predict turbulence
-            prediction = self.turbulence_model.predict(features_scaled)[0]
-            probabilities = self.turbulence_model.predict_proba(features_scaled)[0]
+            # Wind factor
+            if wind_speed > 30:
+                turbulence_score += 3
+            elif wind_speed > 20:
+                turbulence_score += 2
+            elif wind_speed > 10:
+                turbulence_score += 1
             
-            turbulence_levels = ['None', 'Light', 'Moderate', 'Severe']
-            turbulence_level = turbulence_levels[prediction]
-            confidence = max(probabilities)
+            # Gust factor
+            if wind_gust and wind_gust > wind_speed + 10:
+                turbulence_score += 2
+            
+            # Weather factor
+            if 'TS' in weather_string:
+                turbulence_score += 3
+            elif any(wx in weather_string for wx in ['RA', 'SN']):
+                turbulence_score += 1
+            
+            # Determine turbulence level
+            if turbulence_score >= 6:
+                level = 'Severe'
+                probability = min(90, 60 + turbulence_score * 5)
+            elif turbulence_score >= 4:
+                level = 'Moderate'
+                probability = min(80, 40 + turbulence_score * 5)
+            elif turbulence_score >= 2:
+                level = 'Light'
+                probability = min(60, 20 + turbulence_score * 10)
+            else:
+                level = 'None'
+                probability = max(10, 30 - turbulence_score * 10)
             
             return {
-                'turbulence_level': turbulence_level,
-                'probability': round(probabilities[prediction] * 100, 1),
-                'confidence': round(confidence * 100, 1),
-                'all_probabilities': {
-                    level: round(prob * 100, 1) 
-                    for level, prob in zip(turbulence_levels, probabilities)
-                }
+                'turbulence_level': level,
+                'probability': round(probability, 1),
+                'confidence': round(min(95, max(60, 70 + turbulence_score * 5)), 1)
             }
             
         except Exception as e:
             logging.error(f"Error predicting turbulence: {e}")
-            return {'turbulence_level': 'Error', 'probability': 0, 'confidence': 0}
+            return {'turbulence_level': 'Unknown', 'probability': 0, 'confidence': 0}
     
     def predict_weather_evolution(self, current_conditions: Dict, hours_ahead: int = 2) -> List[Dict]:
-        """Predict how weather conditions will evolve"""
+        """Simple weather evolution prediction"""
         try:
             predictions = []
+            current_severity = current_conditions.get('category', 'Clear')
             
             for hour in range(1, hours_ahead + 1):
-                # Simulate weather evolution with some randomness
-                features = self._extract_features(current_conditions)
+                # Simple degradation/improvement model
+                if current_severity == 'Clear':
+                    predicted_severity = random.choices(['Clear', 'Significant'], weights=[0.8, 0.2])[0]
+                elif current_severity == 'Significant':
+                    predicted_severity = random.choices(['Clear', 'Significant', 'Severe'], weights=[0.3, 0.5, 0.2])[0]
+                else:  # Severe
+                    predicted_severity = random.choices(['Significant', 'Severe'], weights=[0.4, 0.6])[0]
                 
-                # Add time-based variations
-                features = np.array(features) + np.random.normal(0, 0.1, len(features))
-                features_scaled = self.scaler.transform([features])
+                # Confidence decreases with time
+                confidence = max(50, 90 - hour * 15)
                 
-                # Predict weather pattern
-                if self.weather_pattern_model:
-                    prediction = self.weather_pattern_model.predict(features_scaled)[0]
-                    probabilities = self.weather_pattern_model.predict_proba(features_scaled)[0]
-                    
-                    weather_levels = ['Clear', 'Significant', 'Severe']
-                    predicted_level = weather_levels[prediction]
-                    confidence = max(probabilities)
-                    
-                    predictions.append({
-                        'hour': hour,
-                        'predicted_severity': predicted_level,
-                        'confidence': round(confidence * 100, 1),
-                        'timestamp': (datetime.now(timezone.utc) + timedelta(hours=hour)).isoformat()
-                    })
-                else:
-                    predictions.append({
-                        'hour': hour,
-                        'predicted_severity': 'Unknown',
-                        'confidence': 0,
-                        'timestamp': (datetime.now(timezone.utc) + timedelta(hours=hour)).isoformat()
-                    })
+                predictions.append({
+                    'hour': hour,
+                    'predicted_severity': predicted_severity,
+                    'confidence': round(confidence, 1),
+                    'timestamp': (datetime.now(timezone.utc) + timedelta(hours=hour)).isoformat()
+                })
             
             return predictions
             
         except Exception as e:
             logging.error(f"Error predicting weather evolution: {e}")
             return []
-    
-    def _extract_features(self, weather_conditions: Dict) -> List[float]:
-        """Extract numerical features from weather conditions"""
-        try:
-            # Default feature values
-            wind_speed = 10.0
-            visibility = 10.0
-            pressure_change = 0.0
-            temperature = 15.0
-            humidity = 50.0
-            
-            # Extract actual values if available
-            if 'wspd' in weather_conditions:
-                wind_speed = float(weather_conditions['wspd'])
-            
-            if 'visib' in weather_conditions:
-                vis = weather_conditions['visib']
-                if isinstance(vis, (int, float)):
-                    visibility = float(vis)
-                elif isinstance(vis, str) and vis.replace('.', '').isdigit():
-                    visibility = float(vis)
-            
-            # Add some randomness to simulate realistic variations
-            features = [
-                wind_speed / 50.0,  # Normalize wind speed
-                visibility / 10.0,  # Normalize visibility
-                pressure_change,    # Pressure change (simulated)
-                temperature / 50.0, # Normalize temperature
-                humidity / 100.0    # Normalize humidity
-            ]
-            
-            return features
-            
-        except Exception as e:
-            logging.error(f"Error extracting features: {e}")
-            return [0.2, 1.0, 0.0, 0.3, 0.5]  # Default normalized values
 
-# Enhanced WeatherProcessor with NLP and ML integration
+# Enhanced WeatherProcessor with simplified NLP
 class WeatherProcessor:
     """Process and categorize aviation weather data with NOTAM support"""
     
@@ -467,9 +381,9 @@ class WeatherProcessor:
             'User-Agent': 'PilotWeatherBriefingApp/1.0'
         })
         
-        # Initialize NLP and ML processors
-        self.nlp_processor = NLPWeatherProcessor()
-        self.ml_predictor = MLWeatherPredictor()
+        # Initialize simplified processors
+        self.nlp_processor = SimpleNLPProcessor()
+        self.weather_predictor = SimpleWeatherPredictor()
 
     def categorize_weather(self, metar_data: dict) -> str:
         """Categorize weather conditions into Clear, Significant, or Severe"""
@@ -534,7 +448,7 @@ class WeatherProcessor:
             
         except Exception as e:
             logging.error(f"Error categorizing weather: {e}")
-            return "Clear"  # Default to Clear if error
+            return "Clear"
 
     def simulate_historical_weather(self, lat: float, lon: float, target_time: datetime, current_weather: Dict = None) -> Dict:
         """Simulate realistic weather conditions for a historical time based on current conditions"""
@@ -796,7 +710,7 @@ class WeatherProcessor:
                 enhanced_data = []
                 for metar in data:
                     enhanced_metar = self.enhance_metar(metar)
-                    # Add NLP enhancement
+                    # Add simple NLP enhancement
                     if metar.get('rawOb'):
                         enhanced_metar['natural_language'] = self.nlp_processor.decode_metar_to_natural_language(metar['rawOb'])
                     enhanced_data.append(enhanced_metar)
@@ -992,7 +906,7 @@ class WeatherProcessor:
                     'lon': lon,
                     'conditions': conditions,
                     'severity': conditions['severity'],
-                    'flight_segment': f"{segment['from']} → {segment['to']}"
+                    'flight_segment': f"{segment['from']} -> {segment['to']}"
                 })
         
         return timeline
@@ -1028,8 +942,8 @@ class WeatherProcessor:
         else:
             severity = base_severity
         
-        # Add ML predictions
-        turbulence_prediction = self.ml_predictor.predict_turbulence(simulated_weather)
+        # Add simple predictions
+        turbulence_prediction = self.weather_predictor.predict_turbulence(simulated_weather)
         
         return {
             'severity': severity,
@@ -1145,7 +1059,7 @@ class WeatherProcessor:
         elif progress > 0.7:
             return f"Approaching {segment['to']}"
         else:
-            return f"En route {segment['from']} → {segment['to']}"
+            return f"En route {segment['from']} -> {segment['to']}"
 
 # Initialize processor
 weather_processor = WeatherProcessor()
@@ -1158,7 +1072,7 @@ def index():
 def static_files(filename):
     return send_from_directory('.', filename)
 
-# NEW: NLP Flight Plan Processing Endpoint
+# NLP Flight Plan Processing Endpoint
 @app.route('/api/process-natural-language', methods=['POST'])
 def process_natural_language():
     """Process natural language flight plan input"""
@@ -1239,12 +1153,12 @@ def enhanced_flight_plan():
         # Generate risk assessment
         risk_assessment = weather_processor.nlp_processor.generate_risk_assessment(timeline)
         
-        # Generate ML weather predictions
+        # Generate simple weather predictions
         weather_predictions = []
         if timeline:
             # Use first timeline item for prediction base
             base_conditions = timeline[0].get('conditions', {})
-            weather_predictions = weather_processor.ml_predictor.predict_weather_evolution(base_conditions, 3)
+            weather_predictions = weather_processor.weather_predictor.predict_weather_evolution(base_conditions, 3)
         
         return jsonify({
             'route': {
@@ -1275,7 +1189,7 @@ def enhanced_flight_plan():
                 'notams_count': len(weather_data.get('notams', []))
             },
             'notams': weather_data.get('notams', []),
-            # NEW: Enhanced features
+            # Enhanced features
             'nlp_briefing_summary': weather_briefing_summary,
             'risk_assessment': risk_assessment,
             'weather_predictions': weather_predictions
