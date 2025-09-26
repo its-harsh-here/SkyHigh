@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Aviation Weather Briefing System with AI & NLP</title>
+    <title>SkyHigh</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -582,7 +582,7 @@
     <header class="header">
         <div class="container">
             <div class="header-content">
-                <h1>AI-Powered Aviation Weather Briefing System</h1>
+                <h1>SkyHigh</h1>
                 <div class="utc-time">
                     UTC: <span id="utc-clock">--:--:--</span>
                 </div>
@@ -596,7 +596,7 @@
 
             <!-- Flight Plan Input -->
             <section class="flight-plan-section">
-                <h2 style="margin-bottom: 1rem;">Flight Planning</h2>
+                <h2 style="margin-bottom: 1rem;">Flight Plan</h2>
                 <div class="flight-plan-grid">
                     <div class="form-group">
                         <label for="departure">Departure Airport *</label>
@@ -626,14 +626,14 @@
                         </small>
                     </div>
                     <div class="form-group" style="display: flex; align-items: end;">
-                        <button id="analyze-btn" class="btn btn-primary">Analyze with AI & NLP</button>
+                        <button id="analyze-btn" class="btn btn-primary">Analyze</button>
                     </div>
                 </div>
             </section>
 
             <!-- Loading/Error States -->
             <div id="loading" class="loading" style="display: none;">
-                <p>Analyzing with AI & NLP models...</p>
+                <p>Analyzing</p>
                 <p style="font-size: 0.9rem; margin-top: 0.5rem;">
                     • Fetching METAR, TAF, PIREP, SIGMET, G-AIRMET, CWA data<br>
                     • Processing NOTAMs with NLP<br>
@@ -671,14 +671,14 @@
 
             <!-- NLP Weather Briefing -->
             <section id="nlp-briefing-section" class="nlp-briefing-section">
-                <h2 style="margin-bottom: 1rem;">AI Weather Briefing Summary</h2>
+                <h2 style="margin-bottom: 1rem;">Weather Summary</h2>
                 <div id="nlp-briefing-content" style="font-size: 1.1rem; line-height: 1.8; padding: 1.5rem; background: var(--gray-50); border-radius: 0.5rem; border-left: 4px solid var(--secondary-blue);">
                 </div>
             </section>
 
             <!-- Risk Assessment -->
             <section id="risk-assessment-section" class="risk-assessment-section">
-                <h2 style="margin-bottom: 1rem;">AI Risk Assessment</h2>
+                <h2 style="margin-bottom: 1rem;">Risk Assessment</h2>
                 <div id="risk-assessment-content">
                     <div id="risk-level-display" class="risk-high" style="padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; border-left: 4px solid;">
                         <h3 id="risk-level">--</h3>
@@ -701,6 +701,26 @@
                         <canvas id="visibilityChart"></canvas>
                     </div>
                 </div>
+            </section>
+
+            <!-- NOTAM Section -->
+            <section id="notam-section" class="notam-section">
+                <h2 style="margin-bottom: 1rem;">NOTAMs (Notices to Air Missions)</h2>
+                <div id="notam-grid" class="notam-grid"></div>
+            </section>
+
+            <!-- Timeline Visualization -->
+            <section id="timeline-section" class="timeline-section">
+                <h2 style="margin-bottom: 1rem;">Flight Weather Timeline</h2>
+                
+                <!-- Chart Container -->
+                <div class="timeline-chart">
+                    <canvas id="timelineChart"></canvas>
+                </div>
+
+                <!-- Detailed Timeline -->
+                <h3 style="margin-bottom: 1rem;">Detailed Weather Conditions</h3>
+                <div id="timeline-details" class="timeline-details"></div>
             </section>
 
             <!-- Weather Data Summary -->
@@ -736,26 +756,6 @@
                         <div class="summary-label">NOTAMs</div>
                     </div>
                 </div>
-            </section>
-
-            <!-- NOTAM Section -->
-            <section id="notam-section" class="notam-section">
-                <h2 style="margin-bottom: 1rem;">NOTAMs (Notices to Air Missions)</h2>
-                <div id="notam-grid" class="notam-grid"></div>
-            </section>
-
-            <!-- Timeline Visualization -->
-            <section id="timeline-section" class="timeline-section">
-                <h2 style="margin-bottom: 1rem;">Flight Weather Timeline with AI Insights</h2>
-                
-                <!-- Chart Container -->
-                <div class="timeline-chart">
-                    <canvas id="timelineChart"></canvas>
-                </div>
-
-                <!-- Detailed Timeline -->
-                <h3 style="margin-bottom: 1rem;">Detailed Weather Conditions with NLP Analysis & Raw Data</h3>
-                <div id="timeline-details" class="timeline-details"></div>
             </section>
 
         </div>
@@ -1070,7 +1070,7 @@
             if (route.risk_assessment) {
                 const riskLevel = route.risk_assessment.risk_level;
                 const riskPercentage = route.risk_assessment.risk_percentage;
-                routeTitle.textContent = `Flight Route Analysis - ${riskLevel} (${riskPercentage}% Risk Score)`;
+                routeTitle.textContent = 'Flight Route Analysis';
             } else {
                 routeTitle.textContent = 'Flight Route Analysis';
             }
