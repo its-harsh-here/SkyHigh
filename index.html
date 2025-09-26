@@ -72,7 +72,7 @@
             padding: 2rem 0;
         }
 
-        .flight-plan-section, .nlp-section {
+        .flight-plan-section {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
@@ -112,11 +112,6 @@
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
 
-        .nlp-textarea {
-            min-height: 120px;
-            resize: vertical;
-        }
-
         .btn {
             padding: 0.75rem 1.5rem;
             border: none;
@@ -129,16 +124,6 @@
 
         .btn-primary {
             background: var(--secondary-blue);
-            color: white;
-        }
-
-        .btn-secondary {
-            background: var(--gray-600);
-            color: white;
-        }
-
-        .btn-success {
-            background: var(--success-green);
             color: white;
         }
 
@@ -391,32 +376,6 @@
             margin-bottom: 1rem;
         }
 
-        .tabs {
-            display: flex;
-            margin-bottom: 1rem;
-            border-bottom: 2px solid var(--gray-200);
-        }
-
-        .tab {
-            padding: 0.75rem 1.5rem;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.3s ease;
-        }
-
-        .tab.active {
-            color: var(--secondary-blue);
-            border-bottom-color: var(--secondary-blue);
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
         @media (max-width: 768px) {
             .flight-plan-grid {
                 grid-template-columns: 1fr;
@@ -448,7 +407,7 @@
     <header class="header">
         <div class="container">
             <div class="header-content">
-                <h1>AI-Powered Aviation Weather Briefing with NLP</h1>
+                <h1>AI-Powered Aviation Weather Briefing System</h1>
                 <div class="utc-time">
                     UTC: <span id="utc-clock">--:--:--</span>
                 </div>
@@ -459,16 +418,10 @@
     <!-- Main Content -->
     <main class="main-content">
         <div class="container">
-            
-            <!-- Input Method Tabs -->
-            <div class="tabs">
-                <div class="tab active" onclick="switchTab('manual')">Manual Input</div>
-                <div class="tab" onclick="switchTab('nlp')">Natural Language</div>
-            </div>
 
-            <!-- Manual Flight Plan Input -->
-            <section id="manual-tab" class="tab-content active flight-plan-section">
-                <h2 style="margin-bottom: 1rem;">Manual Flight Planning</h2>
+            <!-- Flight Plan Input -->
+            <section class="flight-plan-section">
+                <h2 style="margin-bottom: 1rem;">Flight Planning</h2>
                 <div class="flight-plan-grid">
                     <div class="form-group">
                         <label for="departure">Departure Airport *</label>
@@ -503,27 +456,6 @@
                 </div>
             </section>
 
-            <!-- Natural Language Input -->
-            <section id="nlp-tab" class="tab-content nlp-section">
-                <h2 style="margin-bottom: 1rem;">Natural Language Flight Planning</h2>
-                <div class="form-group">
-                    <label for="nlp-input">Describe Your Flight Plan</label>
-                    <textarea id="nlp-input" class="form-control nlp-textarea" 
-                              placeholder="Example: 'I want to fly from JFK to LAX via Chicago O'Hare and Denver at 450 knots, departing tomorrow at 10 AM'"></textarea>
-                    <small style="color: var(--gray-600); font-size: 0.8rem; margin-top: 0.25rem;">
-                        Describe your flight plan in natural language. Include departure/destination airports, waypoints, speed, and departure time.
-                    </small>
-                </div>
-                <div style="margin-top: 1rem;">
-                    <button id="process-nlp-btn" class="btn btn-secondary">Process with NLP</button>
-                    <button id="analyze-nlp-btn" class="btn btn-primary" style="margin-left: 1rem;" disabled>Analyze Flight Plan</button>
-                </div>
-                <div id="nlp-result" style="margin-top: 1rem; display: none;">
-                    <h3>Extracted Flight Plan:</h3>
-                    <div id="nlp-extracted-plan" style="background: var(--gray-50); padding: 1rem; border-radius: 0.5rem; margin-top: 0.5rem;"></div>
-                </div>
-            </section>
-
             <!-- Loading/Error States -->
             <div id="loading" class="loading" style="display: none;">
                 <p>Analyzing with AI & NLP models...</p>
@@ -537,11 +469,10 @@
             <div id="error-message" class="error" style="display: none;"></div>
             <div id="success-message" class="success" style="display: none;"></div>
 
-            <!-- Route Overview -->
+            <!-- Route Overview (Removed Severity Badge) -->
             <section id="route-overview" class="route-overview">
                 <div class="route-header">
                     <h2 id="route-title">Flight Route Analysis</h2>
-                    <div id="overall-severity" class="severity-badge"></div>
                 </div>
                 <div class="route-stats">
                     <div class="stat-item">
@@ -661,7 +592,6 @@
         let windChart = null;
         let visibilityChart = null;
         let currentFlightData = {};
-        let extractedFlightPlan = {};
 
         // DOM elements
         const utcClock = document.getElementById('utc-clock');
@@ -671,9 +601,6 @@
         const cruiseSpeedInput = document.getElementById('cruise-speed');
         const departureTimeInput = document.getElementById('departure-time');
         const analyzeBtn = document.getElementById('analyze-btn');
-        const nlpInput = document.getElementById('nlp-input');
-        const processNlpBtn = document.getElementById('process-nlp-btn');
-        const analyzeNlpBtn = document.getElementById('analyze-nlp-btn');
         const loading = document.getElementById('loading');
         const errorMessage = document.getElementById('error-message');
         const successMessage = document.getElementById('success-message');
@@ -706,84 +633,6 @@
         }
         setDefaultDepartureTime();
 
-        // Tab switching functionality
-        function switchTab(tabName) {
-            // Hide all tab contents
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // Remove active class from all tabs
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // Show selected tab content
-            document.getElementById(tabName + '-tab').classList.add('active');
-            
-            // Add active class to selected tab
-            event.target.classList.add('active');
-        }
-
-        // Process natural language input
-        async function processNaturalLanguage() {
-            const text = nlpInput.value.trim();
-            
-            if (!text) {
-                showError('Please enter a flight plan description');
-                return;
-            }
-            
-            showLoading();
-            
-            try {
-                const response = await fetch('/api/process-natural-language', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ text: text })
-                });
-                
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || `HTTP ${response.status}`);
-                }
-                
-                const data = await response.json();
-                extractedFlightPlan = data.flight_plan;
-                
-                // Display extracted flight plan
-                displayExtractedFlightPlan(extractedFlightPlan);
-                
-                // Enable analyze button
-                analyzeNlpBtn.disabled = false;
-                
-                hideLoading();
-                showSuccess('Flight plan extracted successfully from natural language');
-                
-            } catch (error) {
-                console.error('Error processing natural language:', error);
-                showError(`Failed to process natural language: ${error.message}`);
-            }
-        }
-
-        function displayExtractedFlightPlan(flightPlan) {
-            const resultDiv = document.getElementById('nlp-result');
-            const planDiv = document.getElementById('nlp-extracted-plan');
-            
-            let planHtml = '<ul>';
-            planHtml += `<li><strong>Departure:</strong> ${flightPlan.departure || 'Not specified'}</li>`;
-            planHtml += `<li><strong>Destination:</strong> ${flightPlan.destination || 'Not specified'}</li>`;
-            planHtml += `<li><strong>Waypoints:</strong> ${flightPlan.waypoints.length > 0 ? flightPlan.waypoints.join(', ') : 'None'}</li>`;
-            planHtml += `<li><strong>Cruise Speed:</strong> ${flightPlan.cruise_speed} knots</li>`;
-            planHtml += `<li><strong>Departure Time:</strong> ${flightPlan.departure_time || 'Current time'}</li>`;
-            planHtml += '</ul>';
-            
-            planDiv.innerHTML = planHtml;
-            resultDiv.style.display = 'block';
-        }
-
         // Show/hide UI states
         function showLoading() {
             loading.style.display = 'block';
@@ -810,29 +659,19 @@
         }
 
         // Analyze weather timeline with AI & NLP
-        async function analyzeWeatherTimeline(useNlpData = false) {
-            let departure, destination, waypoints, cruiseSpeed, departureTime;
-            
-            if (useNlpData && extractedFlightPlan) {
-                departure = extractedFlightPlan.departure;
-                destination = extractedFlightPlan.destination;
-                waypoints = extractedFlightPlan.waypoints || [];
-                cruiseSpeed = extractedFlightPlan.cruise_speed || 450;
-                departureTime = extractedFlightPlan.departure_time;
-            } else {
-                departure = departureInput.value.trim().toUpperCase();
-                destination = destinationInput.value.trim().toUpperCase();
-                waypoints = waypointsInput.value.trim().split(',').map(w => w.trim().toUpperCase()).filter(w => w);
-                cruiseSpeed = parseInt(cruiseSpeedInput.value) || 450;
-                departureTime = departureTimeInput.value;
-            }
+        async function analyzeWeatherTimeline() {
+            const departure = departureInput.value.trim().toUpperCase();
+            const destination = destinationInput.value.trim().toUpperCase();
+            const waypoints = waypointsInput.value.trim().split(',').map(w => w.trim().toUpperCase()).filter(w => w);
+            const cruiseSpeed = parseInt(cruiseSpeedInput.value) || 450;
+            const departureTime = departureTimeInput.value;
             
             if (!departure || !destination) {
                 showError('Please specify both departure and destination airports');
                 return;
             }
 
-            if (!departureTime && !useNlpData) {
+            if (!departureTime) {
                 showError('Please select a departure date and time');
                 return;
             }
@@ -926,10 +765,6 @@
             document.getElementById('total-time').textContent = formatFlightTime(route.total_flight_time);
             document.getElementById('departure-airport').textContent = route.departure;
             document.getElementById('destination-airport').textContent = route.destination;
-            
-            const severityBadge = document.getElementById('overall-severity');
-            severityBadge.textContent = route.overall_severity;
-            severityBadge.className = `severity-badge severity-${route.overall_severity.toLowerCase()}`;
             
             routeOverview.style.display = 'block';
         }
@@ -1313,19 +1148,13 @@
         }
 
         // Event listeners
-        analyzeBtn.addEventListener('click', () => analyzeWeatherTimeline(false));
-        processNlpBtn.addEventListener('click', processNaturalLanguage);
-        analyzeNlpBtn.addEventListener('click', () => analyzeWeatherTimeline(true));
+        analyzeBtn.addEventListener('click', analyzeWeatherTimeline);
 
         // Allow Enter key in inputs
         [departureInput, destinationInput, waypointsInput, cruiseSpeedInput].forEach(input => {
             input.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') analyzeBtn.click();
             });
-        });
-
-        nlpInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) processNlpBtn.click();
         });
     </script>
 </body>
