@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -26,27 +28,47 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Add CORS middleware for React frontend
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",   # React dev server
-        "http://127.0.0.1:3000",  # Alternative localhost
-        "http://localhost:5173",  # Vite dev server
-        "http://127.0.0.1:5173",  # Alternative Vite
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Pydantic Models (Request/Response schemas)
+# Mount static files
+app.mount("/static", StaticFiles(directory="."), name="static")
+
+# Pydantic Models
 class FlightPlanRequest(BaseModel):
     departure: str = Field(..., description="Departure airport ICAO code", example="KJFK")
     destination: str = Field(..., description="Destination airport ICAO code", example="KLAX")
     waypoints: List[str] = Field(default=[], description="Waypoint airport ICAO codes", example=["KORD", "KDEN"])
     cruise_speed: int = Field(default=450, description="Cruise speed in knots", ge=100, le=900)
     departure_time: Optional[str] = Field(None, description="Departure time in ISO format", example="2025-09-26T02:00:00")
+
+class Coordinates(BaseModel):
+    lat: float
+    lon: float
+    name: str
+
+class FlightSegment(BaseModel):
+    from_airport: str = Field(alias="from")
+    to: str
+    distance_nm: float
+    flight_time_hours: float
+    start_time: str
+    end_time: str
+
+class RouteInfo(BaseModel):
+    departure: str
+    destination: str
+    waypoints: List[str]
+    cruise_speed: int
+    total_distance: float
+    total_flight_time: float
+    overall_severity: str
 
 class WeatherConditions(BaseModel):
     severity: str
@@ -88,26 +110,6 @@ class NOTAM(BaseModel):
     created: str
     source: str
 
-class RouteInfo(BaseModel):
-    departure: str
-    destination: str
-    waypoints: List[str]
-    cruise_speed: int
-    total_distance: float
-    total_flight_time: float
-    overall_severity: str
-
-class FlightSegment(BaseModel):
-    from_airport: str = Field(alias="from")
-    to: str
-    distance_nm: float
-    flight_time_hours: float
-    start_time: str
-    end_time: str
-
-    class Config:
-        allow_population_by_field_name = True
-
 class FlightPlanResponse(BaseModel):
     route: RouteInfo
     flight_segments: List[FlightSegment]
@@ -115,7 +117,6 @@ class FlightPlanResponse(BaseModel):
     weather_summary: WeatherSummary
     notams: List[NOTAM]
 
-# Weather Processor Class (Converted from Flask version)
 class WeatherProcessor:
     """Process and categorize aviation weather data with NOTAM support"""
     
@@ -200,46 +201,59 @@ class WeatherProcessor:
         now = datetime.now(timezone.utc)
         hours_diff = (target_time - now).total_seconds() / 3600
         
-        # Base weather conditions
+        # Base weather conditions (if we have current weather, modify it; otherwise create realistic conditions)
         if current_weather and current_weather.get('wspd') is not None:
             base_wind = current_weather.get('wspd', 10)
+            base_visibility = 10
+            base_ceiling = 5000
         else:
+            # Create realistic base conditions
             base_wind = random.uniform(5, 20)
+            base_visibility = random.choice([10, 8, 5, 3, 1.5])
+            base_ceiling = random.choice([None, 5000, 3000, 1000, 500])
         
+        # Simulate weather variation based on time difference and location
         # Weather patterns typically change every 6-12 hours
         weather_cycle = math.sin(hours_diff / 6 * math.pi) * 0.5 + random.uniform(-0.3, 0.3)
         
-        # Seasonal variation
+        # Seasonal variation (approximate)
         month = target_time.month
-        seasonal_factor = math.sin((month - 3) * math.pi / 6) * 0.3
+        seasonal_factor = math.sin((month - 3) * math.pi / 6) * 0.3  # Peak variation in winter/summer
+        
+        # Geographic factors (simplified)
+        coastal_factor = 0.2 if abs(lat) < 45 else 0.1  # More variation near coasts
         
         # Combined variation factor
-        variation = weather_cycle + seasonal_factor
+        variation = weather_cycle + seasonal_factor + coastal_factor
         
         # Apply variations to create simulated weather
-        simulated_wind = max(0, base_wind + random.uniform(-5, 5))
+        wind_variation = 1 + variation * 0.5
+        simulated_wind = max(0, base_wind * wind_variation + random.uniform(-5, 5))
         
         # Determine weather severity based on simulated conditions
         if variation > 0.4:
+            # Bad weather conditions
             weather_types = ['TSRA', 'SN', 'RA', 'FG']
             weather_string = random.choice(weather_types)
             visibility = random.uniform(0.5, 2)
             ceiling = random.choice([200, 400, 800])
             gusts = simulated_wind + random.uniform(10, 20)
         elif variation > 0.1:
+            # Marginal conditions
             weather_types = ['', 'BKN', 'SCT', '-RA', 'HZ']
             weather_string = random.choice(weather_types)
             visibility = random.uniform(3, 6)
             ceiling = random.choice([1000, 1500, 2000])
             gusts = simulated_wind + random.uniform(5, 15) if random.random() > 0.7 else None
         else:
+            # Good conditions
             weather_string = ''
             visibility = 10
             ceiling = None
             gusts = None
         
         # Create simulated METAR-like data
-        return {
+        simulated_metar = {
             'wspd': int(simulated_wind),
             'wgst': int(gusts) if gusts else None,
             'wdir': random.randint(180, 360),
@@ -251,6 +265,8 @@ class WeatherProcessor:
             'icaoId': 'SIMULATED',
             'reportTime': target_time.isoformat()
         }
+        
+        return simulated_metar
 
     async def calculate_flight_path(self, departure: str, destination: str, waypoints: List[str] = None, 
                                   cruise_speed: int = 450, departure_time: str = None) -> List[Dict]:
@@ -261,8 +277,8 @@ class WeatherProcessor:
         coordinates = {}
         
         # Fetch station info for coordinates
+        tasks = []
         async with aiohttp.ClientSession(timeout=self.session_timeout) as session:
-            tasks = []
             for icao in all_points:
                 task = self.get_airport_coordinates(session, icao)
                 tasks.append(task)
@@ -276,21 +292,28 @@ class WeatherProcessor:
         if len(coordinates) < 2:
             return []
         
-        # Parse departure time (Allow 15 days past, 4 hours future)
+        # Calculate flight segments with timing
+        flight_segments = []
+        
+        # Parse user-provided departure_time strictly
         if departure_time and departure_time.strip():
             try:
                 logger.info(f"Parsing departure_time: {departure_time}")
                 
+                # Handle datetime-local format from frontend (YYYY-MM-DDTHH:MM)
                 if 'T' in departure_time and len(departure_time) == 16:
                     current_time = datetime.fromisoformat(departure_time)
                     current_time = current_time.replace(tzinfo=timezone.utc)
                 elif departure_time.endswith('Z'):
                     current_time = datetime.fromisoformat(departure_time.replace('Z', '+00:00'))
+                elif '+' in departure_time or departure_time.endswith('+00:00'):
+                    current_time = datetime.fromisoformat(departure_time)
                 else:
                     current_time = datetime.fromisoformat(departure_time)
                     if current_time.tzinfo is None:
                         current_time = current_time.replace(tzinfo=timezone.utc)
                 
+                # Allow 15 days in past and 4 hours in future (per Aviation Weather API)
                 now_utc = datetime.now(timezone.utc)
                 if current_time > now_utc + timedelta(hours=4):
                     raise ValueError('Departure time cannot be more than 4 hours in the future (TAF forecast limit).')
@@ -300,17 +323,17 @@ class WeatherProcessor:
                 
                 logger.info(f"Successfully parsed departure_time: {current_time}")
                 
-            except ValueError:
-                raise
+            except ValueError as ve:
+                logger.error(f"ValueError parsing departure_time: {ve}")
+                raise ve
             except Exception as e:
                 logger.error(f"Error parsing departure_time: {e}")
                 raise ValueError(f'Invalid departure_time format: {departure_time}. Please use the date/time picker.')
         else:
             current_time = datetime.now(timezone.utc)
+            logger.info(f"Using current UTC time: {current_time}")
         
-        # Calculate flight segments
         path_points = list(coordinates.keys())
-        flight_segments = []
         
         for i in range(len(path_points) - 1):
             from_icao = path_points[i]
@@ -319,6 +342,7 @@ class WeatherProcessor:
             from_coords = coordinates[from_icao]
             to_coords = coordinates[to_icao]
             
+            # Calculate distance and time
             distance = self.haversine_distance(
                 from_coords['lat'], from_coords['lon'],
                 to_coords['lat'], to_coords['lon']
@@ -386,7 +410,7 @@ class WeatherProcessor:
         """Fetch comprehensive weather data including NOTAMs for flight path"""
         weather_data = {}
         
-        # Determine bounding box from flight segments
+        # Determine bounding box from flight segments if not provided
         if not bbox and flight_segments:
             lats = []
             lons = []
@@ -394,9 +418,11 @@ class WeatherProcessor:
                 lats.extend([segment['from_coords']['lat'], segment['to_coords']['lat']])
                 lons.extend([segment['from_coords']['lon'], segment['to_coords']['lon']])
             
+            # Add buffer around flight path
             buffer = 2.0  # degrees
             bbox = f"{min(lats)-buffer},{min(lons)-buffer},{max(lats)+buffer},{max(lons)+buffer}"
         
+        # Default US bounding box if no flight path
         if not bbox:
             bbox = "25,-125,50,-65"
         
@@ -405,9 +431,9 @@ class WeatherProcessor:
             airports = []
             for segment in flight_segments:
                 airports.extend([segment['from'], segment['to']])
-            airports = list(set(airports))
+            airports = list(set(airports))  # Remove duplicates
         
-        # Fetch weather products concurrently
+        # Fetch different weather products concurrently
         async with aiohttp.ClientSession(timeout=self.session_timeout) as session:
             tasks = {
                 'metars': self.get_historical_metars_by_bbox(session, bbox, departure_time),
@@ -416,7 +442,7 @@ class WeatherProcessor:
                 'sigmets': self.get_sigmets(session),
                 'gairmets': self.get_gairmets(session),
                 'cwas': self.get_cwas(session),
-                'notams': self.get_notams(airports or [], departure_time)
+                'notams': self.get_notams(airports or [], departure_time)  # This doesn't need session
             }
             
             results = await asyncio.gather(*tasks.values(), return_exceptions=True)
@@ -440,9 +466,11 @@ class WeatherProcessor:
                 'format': 'json'
             }
             
+            # If departure time is provided, get historical data
             if departure_time:
                 now_utc = datetime.now(timezone.utc)
                 
+                # For historical data (more than 3 hours old), use specific time range
                 if departure_time < now_utc - timedelta(hours=3):
                     start_time = departure_time - timedelta(hours=1)
                     end_time = departure_time + timedelta(hours=1)
@@ -458,6 +486,7 @@ class WeatherProcessor:
                     data = await response.json()
                     return [self.enhance_metar(metar) for metar in data]
                 elif response.status == 204:
+                    logger.info(f"No METAR data available for time period")
                     return []
         except Exception as e:
             logger.error(f"Error fetching METARs: {e}")
@@ -474,8 +503,11 @@ class WeatherProcessor:
                 'format': 'json'
             }
             
+            # If departure time is provided, get historical data
             if departure_time:
                 now_utc = datetime.now(timezone.utc)
+                
+                # For historical data, use specific time range
                 if departure_time < now_utc - timedelta(hours=6):
                     start_time = departure_time - timedelta(hours=3)
                     end_time = departure_time + timedelta(hours=3)
@@ -490,6 +522,7 @@ class WeatherProcessor:
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 204:
+                    logger.info(f"No PIREP data available for time period")
                     return []
         except Exception as e:
             logger.error(f"Error fetching PIREPs: {e}")
@@ -500,7 +533,10 @@ class WeatherProcessor:
         """Fetch TAF data by bounding box"""
         try:
             url = f"{self.base_url}/taf"
-            params = {'bbox': bbox, 'format': 'json'}
+            params = {
+                'bbox': bbox,
+                'format': 'json'
+            }
             
             async with session.get(url, params=params) as response:
                 if response.status == 200:
@@ -509,6 +545,7 @@ class WeatherProcessor:
                     return []
         except Exception as e:
             logger.error(f"Error fetching TAFs: {e}")
+        
         return []
 
     async def get_sigmets(self, session: aiohttp.ClientSession) -> List[Dict]:
@@ -524,6 +561,7 @@ class WeatherProcessor:
                     return []
         except Exception as e:
             logger.error(f"Error fetching SIGMETs: {e}")
+        
         return []
 
     async def get_gairmets(self, session: aiohttp.ClientSession) -> List[Dict]:
@@ -539,6 +577,7 @@ class WeatherProcessor:
                     return []
         except Exception as e:
             logger.error(f"Error fetching G-AIRMETs: {e}")
+        
         return []
 
     async def get_cwas(self, session: aiohttp.ClientSession) -> List[Dict]:
@@ -554,29 +593,53 @@ class WeatherProcessor:
                     return []
         except Exception as e:
             logger.error(f"Error fetching CWAs: {e}")
+        
         return []
 
     def get_notams(self, airports: List[str], departure_time: datetime = None) -> List[Dict]:
         """Generate time-appropriate NOTAMs based on departure time"""
         sample_notams = []
         
+        # Use departure_time if provided, otherwise current time
         if departure_time:
             reference_time = departure_time
         else:
             reference_time = datetime.now(timezone.utc)
         
         notam_templates = [
-            {'text': 'RWY {rwy} CLOSED FOR MAINTENANCE', 'classification': 'Runway', 'severity': 'Significant'},
-            {'text': 'ILS RWY {rwy} OUT OF SERVICE', 'classification': 'Navigation Aid', 'severity': 'Significant'},
-            {'text': 'CONSTRUCTION ACTIVITY NEAR TERMINAL', 'classification': 'Airport', 'severity': 'Clear'},
-            {'text': 'TEMPORARY FLIGHT RESTRICTION IN EFFECT', 'classification': 'Airspace', 'severity': 'Severe'},
-            {'text': 'TAXIWAY {twy} PARTIALLY CLOSED', 'classification': 'Taxiway', 'severity': 'Clear'}
+            {
+                'text': 'RWY {rwy} CLOSED FOR MAINTENANCE',
+                'classification': 'Runway',
+                'severity': 'Significant'
+            },
+            {
+                'text': 'ILS RWY {rwy} OUT OF SERVICE',
+                'classification': 'Navigation Aid',
+                'severity': 'Significant'
+            },
+            {
+                'text': 'CONSTRUCTION ACTIVITY NEAR TERMINAL',
+                'classification': 'Airport',
+                'severity': 'Clear'
+            },
+            {
+                'text': 'TEMPORARY FLIGHT RESTRICTION IN EFFECT',
+                'classification': 'Airspace',
+                'severity': 'Severe'
+            },
+            {
+                'text': 'TAXIWAY {twy} PARTIALLY CLOSED',
+                'classification': 'Taxiway',
+                'severity': 'Clear'
+            }
         ]
         
         runways = ['09/27', '18/36', '04/22', '13/31', '01/19']
         taxiways = ['A', 'B', 'C', 'D', 'E']
         
-        for i, airport in enumerate(airports[:4]):
+        # Create deterministic NOTAMs based on departure time
+        for i, airport in enumerate(airports[:4]):  # Limit to 4 airports
+            # Create deterministic seed based on airport and departure time
             seed_str = f"{airport}_{reference_time.strftime('%Y%m%d')}"
             seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
             random.seed(seed)
@@ -585,13 +648,15 @@ class WeatherProcessor:
             runway = runways[i % len(runways)]
             taxiway = taxiways[i % len(taxiways)]
             
-            start_offset_hours = random.randint(-48, -2)
-            duration_hours = random.randint(6, 72)
+            # Create NOTAMs that would be active around the departure time
+            start_offset_hours = random.randint(-48, -2)  # 2-48 hours before departure
+            duration_hours = random.randint(6, 72)  # 6-72 hours duration
             
             start_time = reference_time + timedelta(hours=start_offset_hours)
             end_time = start_time + timedelta(hours=duration_hours)
             
-            if end_time > reference_time:
+            # Only include NOTAMs that are active during or around the departure time
+            if end_time > reference_time:  # NOTAM is still active
                 notam_text = template['text'].format(rwy=runway, twy=taxiway)
                 
                 sample_notams.append({
@@ -614,10 +679,11 @@ class WeatherProcessor:
         return metar
 
     def create_timeline_analysis(self, flight_segments: List[Dict], weather_data: Dict) -> List[Dict]:
-        """Create detailed timeline weather analysis for flight path"""
+        """Create detailed timeline weather analysis for flight path with time-based weather simulation"""
         timeline = []
         
         for segment in flight_segments:
+            # Break segment into smaller time intervals for detailed analysis
             segment_duration = segment['flight_time_hours']
             num_intervals = max(1, int(segment_duration * 4))  # 15-minute intervals
             interval_duration = segment_duration / num_intervals
@@ -626,17 +692,19 @@ class WeatherProcessor:
                 interval_start = segment['start_time'] + timedelta(hours=i * interval_duration)
                 interval_end = segment['start_time'] + timedelta(hours=(i + 1) * interval_duration)
                 
+                # Interpolate position along flight path
                 progress = (i + 0.5) / num_intervals
                 lat = segment['from_coords']['lat'] + progress * (segment['to_coords']['lat'] - segment['from_coords']['lat'])
                 lon = segment['from_coords']['lon'] + progress * (segment['to_coords']['lon'] - segment['from_coords']['lon'])
                 
+                # Get weather conditions for this time/location with historical simulation
                 conditions = self.get_conditions_for_location_time(lat, lon, interval_start, weather_data)
                 
                 timeline.append({
                     'start_time': interval_start.isoformat(),
                     'end_time': interval_end.isoformat(),
-                    'start_time_local': interval_start.strftime("%H:%M UTC"),
-                    'end_time_local': interval_end.strftime("%H:%M UTC"),
+                    'start_time_local': self.format_time_for_display(interval_start),
+                    'end_time_local': self.format_time_for_display(interval_end),
                     'location_description': self.get_location_description(lat, lon, segment, progress),
                     'lat': lat,
                     'lon': lon,
@@ -648,26 +716,40 @@ class WeatherProcessor:
         return timeline
 
     def get_conditions_for_location_time(self, lat: float, lon: float, time: datetime, weather_data: Dict) -> Dict:
-        """Get weather conditions for specific location and time"""
+        """Get weather conditions for specific location and time with historical simulation"""
+        
+        # Find nearest METAR station for reference
         nearest_metar = self.find_nearest_weather_data(lat, lon, weather_data.get('metars', []))
         
+        # For historical data, try to use real weather data; otherwise simulate
         now_utc = datetime.now(timezone.utc)
-        if nearest_metar and abs((time - now_utc).total_seconds()) < 3 * 3600:
+        if nearest_metar and abs((time - now_utc).total_seconds()) < 3 * 3600:  # Within 3 hours
+            # Use real weather data
             simulated_weather = nearest_metar
         else:
+            # Simulate historical weather conditions based on the specific time
             simulated_weather = self.simulate_historical_weather(lat, lon, time, nearest_metar)
         
+        # Enhance the simulated weather with categorization
         simulated_weather['category'] = self.categorize_weather(simulated_weather)
         
+        # Check for PIREPs in area (use current PIREPs as reference)
         pirep_reports = self.get_pireps_near_location(lat, lon, weather_data.get('pireps', []))
+        
+        # Check for hazardous weather warnings (simulated based on weather conditions)
         hazards = self.simulate_hazards_for_conditions(simulated_weather, weather_data)
+        
+        # Check for NOTAMs affecting nearby airports
         notam_warnings = self.check_notams_for_location(lat, lon, weather_data.get('notams', []))
         
+        # Combine hazards with NOTAM warnings
         all_hazards = hazards + notam_warnings
         
+        # Determine primary weather condition based on simulated weather
         base_severity = simulated_weather.get('category', 'Clear')
         condition = self.get_weather_description(simulated_weather)
         
+        # Only upgrade severity if there are actual hazards
         if all_hazards:
             if any("TFR" in h or "CLOSED" in h or "SIGMET" in h for h in all_hazards):
                 severity = "Severe"
@@ -681,16 +763,17 @@ class WeatherProcessor:
         return {
             'severity': severity,
             'condition': condition,
-            'description': f"Current: {condition}",
+            'description': self.create_detailed_description(simulated_weather, pirep_reports, all_hazards),
             'hazards': all_hazards,
             'pirep_count': len(pirep_reports),
-            'nearest_station': simulated_weather.get('icaoId')
+            'nearest_station': simulated_weather.get('icaoId') if simulated_weather else None
         }
 
     def simulate_hazards_for_conditions(self, weather: Dict, weather_data: Dict) -> List[str]:
         """Simulate hazards based on weather conditions"""
         hazards = []
         
+        # Create deterministic hazards based on weather severity
         if weather.get('wxString'):
             wx_string = weather['wxString']
             if 'TS' in wx_string:
@@ -700,15 +783,17 @@ class WeatherProcessor:
             elif 'FG' in wx_string:
                 hazards.append("G-AIRMET: Low visibility in fog")
         
+        # Add wind shear warnings for high winds
         if weather.get('wspd', 0) > 30:
             hazards.append("CWA: Strong surface winds")
         
-        return hazards[:2]
+        return hazards[:2]  # Limit to top 2 hazards
 
     def check_notams_for_location(self, lat: float, lon: float, notams: List[Dict]) -> List[str]:
         """Check for NOTAMs affecting nearby airports"""
         warnings = []
         
+        # Only show significant NOTAMs for demo
         for notam in notams:
             classification = notam.get('classification', 'Unknown')
             severity = notam.get('severity', 'Clear')
@@ -721,7 +806,7 @@ class WeatherProcessor:
                 elif 'CLOSED' in text and 'RWY' in text:
                     warnings.append(f"NOTAM {airport}: Runway closure")
         
-        return warnings[:1]
+        return warnings[:1]  # Limit to 1 most critical NOTAM
 
     def find_nearest_weather_data(self, lat: float, lon: float, weather_list: List[Dict]) -> Optional[Dict]:
         """Find nearest weather station to given coordinates"""
@@ -734,7 +819,7 @@ class WeatherProcessor:
             
             if w_lat and w_lon:
                 distance = self.haversine_distance(lat, lon, w_lat, w_lon)
-                if distance < min_distance and distance < 100:
+                if distance < min_distance and distance < 100:  # Within 100nm
                     min_distance = distance
                     nearest = weather
         
@@ -750,7 +835,7 @@ class WeatherProcessor:
             
             if p_lat and p_lon:
                 distance = self.haversine_distance(lat, lon, p_lat, p_lon)
-                if distance < 50:
+                if distance < 50:  # Within 50nm
                     nearby_pireps.append(pirep)
         
         return nearby_pireps
@@ -762,16 +847,19 @@ class WeatherProcessor:
         
         conditions = []
         
+        # Weather phenomena
         wx_string = metar.get('wxString', '')
         if wx_string:
             conditions.append(f"Weather: {wx_string}")
         else:
             conditions.append("Weather: Clear")
         
+        # Visibility
         visibility = metar.get('visib')
         if visibility:
             conditions.append(f"Visibility: {visibility}SM" if isinstance(visibility, (int, float)) else f"Visibility: {visibility}")
         
+        # Wind
         wind_dir = metar.get('wdir')
         wind_speed = metar.get('wspd')
         if wind_dir and wind_speed:
@@ -783,6 +871,21 @@ class WeatherProcessor:
         
         return " | ".join(conditions) if conditions else "Clear conditions"
 
+    def create_detailed_description(self, metar: Dict, pireps: List[Dict], hazards: List[str]) -> str:
+        """Create detailed weather description"""
+        description_parts = []
+        
+        if metar:
+            description_parts.append(f"Current: {self.get_weather_description(metar)}")
+        
+        if pireps:
+            description_parts.append(f"{len(pireps)} pilot report(s) in area")
+        
+        if hazards:
+            description_parts.extend(hazards)
+        
+        return " | ".join(description_parts) if description_parts else "No significant weather reported"
+
     def get_location_description(self, lat: float, lon: float, segment: Dict, progress: float) -> str:
         """Get human-readable location description"""
         if progress < 0.3:
@@ -792,10 +895,24 @@ class WeatherProcessor:
         else:
             return f"En route {segment['from']} → {segment['to']}"
 
+    def format_time_for_display(self, dt: datetime) -> str:
+        """Format datetime for display"""
+        return dt.strftime("%H:%M UTC")
+
 # Initialize processor
 weather_processor = WeatherProcessor()
 
-# API Routes (Converted from Flask routes)
+# Routes
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    """Serve the main HTML page"""
+    return FileResponse('index.html')
+
+@app.get("/{file_path:path}")
+async def serve_static_files(file_path: str):
+    """Serve static files"""
+    return FileResponse(file_path)
+
 @app.post("/api/enhanced-flight-plan", 
           response_model=FlightPlanResponse,
           summary="Enhanced Flight Plan Analysis",
@@ -817,7 +934,7 @@ async def enhanced_flight_plan(request: FlightPlanRequest):
         if not flight_segments:
             raise HTTPException(status_code=400, detail='Unable to calculate flight path')
         
-        # Extract departure time from flight segments
+        # Extract departure time from flight segments for weather/NOTAM processing
         actual_departure_time = flight_segments[0]['start_time']
         
         # Collect all airports for NOTAM fetching
@@ -863,7 +980,9 @@ async def enhanced_flight_plan(request: FlightPlanRequest):
                     }
                 ) for s in flight_segments
             ],
-            timeline=[TimelineItem(**item) for item in timeline],
+            timeline=[
+                TimelineItem(**item) for item in timeline
+            ],
             weather_summary=WeatherSummary(
                 metars_count=len(weather_data.get('metars', [])),
                 tafs_count=len(weather_data.get('tafs', [])),
@@ -873,7 +992,9 @@ async def enhanced_flight_plan(request: FlightPlanRequest):
                 cwas_count=len(weather_data.get('cwas', [])),
                 notams_count=len(weather_data.get('notams', []))
             ),
-            notams=[NOTAM(**notam) for notam in weather_data.get('notams', [])]
+            notams=[
+                NOTAM(**notam) for notam in weather_data.get('notams', [])
+            ]
         )
         
     except HTTPException:
@@ -884,4 +1005,4 @@ async def enhanced_flight_plan(request: FlightPlanRequest):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
