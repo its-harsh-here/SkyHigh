@@ -203,5 +203,4 @@ This project is developed for educational and demonstration purposes. Weather da
 This application is for informational purposes only. All weather information should be verified through official aviation weather sources. Do not use this application as the sole source for flight planning decisions. Always consult official NOTAMs, weather briefings, and follow appropriate aviation regulations and procedures.
 
 
-updates made on harsh's second last version, no modularity/uncluttering. uses nlp to sort and show severity of pireps. three buttons added for raw data and pirep.
 
