@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SkyHigh</title>
+    <title>Enhanced Aviation Weather Briefing System with AI & NLP</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -148,13 +148,27 @@
         }
 
         .timeline-section, .weather-summary, .route-overview, .notam-section, 
-        .risk-assessment-section, .nlp-briefing-section {
+        .risk-assessment-section, .nlp-briefing-section, .charts-section {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             padding: 1.5rem;
             margin-bottom: 2rem;
             display: none;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-container {
+            height: 300px;
+            padding: 1rem;
+            background: var(--gray-50);
+            border-radius: 0.5rem;
         }
 
         .timeline-chart {
@@ -422,6 +436,10 @@
                 min-width: auto;
                 margin-bottom: 0.5rem;
             }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -430,7 +448,7 @@
     <header class="header">
         <div class="container">
             <div class="header-content">
-                <h1>SkyHigh</h1>
+                <h1>AI-Powered Aviation Weather Briefing with NLP</h1>
                 <div class="utc-time">
                     UTC: <span id="utc-clock">--:--:--</span>
                 </div>
@@ -441,45 +459,74 @@
     <!-- Main Content -->
     <main class="main-content">
         <div class="container">
+            
+            <!-- Input Method Tabs -->
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('manual')">Manual Input</div>
+                <div class="tab" onclick="switchTab('nlp')">Natural Language</div>
+            </div>
+
             <!-- Manual Flight Plan Input -->
             <section id="manual-tab" class="tab-content active flight-plan-section">
-                <h2 style="margin-bottom: 1rem;">  Manual Flight Planning</h2>
+                <h2 style="margin-bottom: 1rem;">Manual Flight Planning</h2>
                 <div class="flight-plan-grid">
                     <div class="form-group">
-                        <label for="departure">  Departure Airport *</label>
+                        <label for="departure">Departure Airport *</label>
                         <input type="text" id="departure" class="form-control" 
                                placeholder="e.g., KJFK" maxlength="4" value="KJFK">
                     </div>
                     <div class="form-group">
-                        <label for="destination">  Destination Airport *</label>
+                        <label for="destination">Destination Airport *</label>
                         <input type="text" id="destination" class="form-control" 
                                placeholder="e.g., KLAX" maxlength="4" value="KLAX">
                     </div>
                     <div class="form-group">
-                        <label for="waypoints">  Waypoints</label>
+                        <label for="waypoints">Waypoints</label>
                         <input type="text" id="waypoints" class="form-control" 
                                placeholder="e.g., KORD, KDEN" value="KORD, KDEN">
                     </div>
                     <div class="form-group">
-                        <label for="cruise-speed">  Cruise Speed (knots)</label>
+                        <label for="cruise-speed">Cruise Speed (knots)</label>
                         <input type="number" id="cruise-speed" class="form-control" 
                                value="450" min="100" max="900">
                     </div>
                     <div class="form-group">
-                        <label for="departure-time">  Departure Time (UTC) *</label>
+                        <label for="departure-time">Departure Time (UTC) *</label>
                         <input type="datetime-local" id="departure-time" class="form-control">
                         <small style="color: var(--gray-600); font-size: 0.8rem; margin-top: 0.25rem;">
                             Aviation weather data available: 15 days past to 4 hours future
                         </small>
                     </div>
                     <div class="form-group" style="display: flex; align-items: end;">
-                        <button id="analyze-btn" class="btn btn-primary">Analyze</button>
+                        <button id="analyze-btn" class="btn btn-primary">Analyze with AI & NLP</button>
                     </div>
+                </div>
+            </section>
+
+            <!-- Natural Language Input -->
+            <section id="nlp-tab" class="tab-content nlp-section">
+                <h2 style="margin-bottom: 1rem;">Natural Language Flight Planning</h2>
+                <div class="form-group">
+                    <label for="nlp-input">Describe Your Flight Plan</label>
+                    <textarea id="nlp-input" class="form-control nlp-textarea" 
+                              placeholder="Example: 'I want to fly from JFK to LAX via Chicago O'Hare and Denver at 450 knots, departing tomorrow at 10 AM'"></textarea>
+                    <small style="color: var(--gray-600); font-size: 0.8rem; margin-top: 0.25rem;">
+                        Describe your flight plan in natural language. Include departure/destination airports, waypoints, speed, and departure time.
+                    </small>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <button id="process-nlp-btn" class="btn btn-secondary">Process with NLP</button>
+                    <button id="analyze-nlp-btn" class="btn btn-primary" style="margin-left: 1rem;" disabled>Analyze Flight Plan</button>
+                </div>
+                <div id="nlp-result" style="margin-top: 1rem; display: none;">
+                    <h3>Extracted Flight Plan:</h3>
+                    <div id="nlp-extracted-plan" style="background: var(--gray-50); padding: 1rem; border-radius: 0.5rem; margin-top: 0.5rem;"></div>
                 </div>
             </section>
 
             <!-- Loading/Error States -->
             <div id="loading" class="loading" style="display: none;">
+                <p>Analyzing with AI & NLP models...</p>
                 <p style="font-size: 0.9rem; margin-top: 0.5rem;">
                     • Fetching METAR, TAF, PIREP, SIGMET, G-AIRMET, CWA data<br>
                     • Processing NOTAMs with NLP<br>
@@ -493,7 +540,7 @@
             <!-- Route Overview -->
             <section id="route-overview" class="route-overview">
                 <div class="route-header">
-                    <h2>Flight Route Analysis</h2>
+                    <h2 id="route-title">Flight Route Analysis</h2>
                     <div id="overall-severity" class="severity-badge"></div>
                 </div>
                 <div class="route-stats">
@@ -518,21 +565,35 @@
 
             <!-- NLP Weather Briefing -->
             <section id="nlp-briefing-section" class="nlp-briefing-section">
-                <h2 style="margin-bottom: 1rem;">Weather Briefing Summary</h2>
+                <h2 style="margin-bottom: 1rem;">AI Weather Briefing Summary</h2>
                 <div id="nlp-briefing-content" style="font-size: 1.1rem; line-height: 1.8; padding: 1.5rem; background: var(--gray-50); border-radius: 0.5rem; border-left: 4px solid var(--secondary-blue);">
                 </div>
             </section>
 
-            <!-- Risk Assessment (REMOVED Risk Factors Section) -->
+            <!-- Risk Assessment -->
             <section id="risk-assessment-section" class="risk-assessment-section">
-                <h2 style="margin-bottom: 1rem;">Risk Assessment</h2>
+                <h2 style="margin-bottom: 1rem;">AI Risk Assessment</h2>
                 <div id="risk-assessment-content">
                     <div id="risk-level-display" class="risk-high" style="padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; border-left: 4px solid;">
                         <h3 id="risk-level">--</h3>
                         <p id="risk-percentage">--</p>
                         <p id="risk-recommendation" style="margin-top: 0.5rem; font-style: italic;">--</p>
                     </div>
-                    <!-- REMOVED: Risk Factors Section -->
+                </div>
+            </section>
+
+            <!-- Weather Charts Section -->
+            <section id="charts-section" class="charts-section">
+                <h2 style="margin-bottom: 1.5rem;">Weather Analysis Charts</h2>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h3 style="margin-bottom: 1rem; text-align: center;">Wind Speed Timeline</h3>
+                        <canvas id="windChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3 style="margin-bottom: 1rem; text-align: center;">Visibility Timeline</h3>
+                        <canvas id="visibilityChart"></canvas>
+                    </div>
                 </div>
             </section>
 
@@ -579,7 +640,7 @@
 
             <!-- Timeline Visualization -->
             <section id="timeline-section" class="timeline-section">
-                <h2 style="margin-bottom: 1rem;">Flight Weather Timeline</h2>
+                <h2 style="margin-bottom: 1rem;">Flight Weather Timeline with AI Insights</h2>
                 
                 <!-- Chart Container -->
                 <div class="timeline-chart">
@@ -597,6 +658,8 @@
     <script>
         // Application state
         let timelineChart = null;
+        let windChart = null;
+        let visibilityChart = null;
         let currentFlightData = {};
         let extractedFlightPlan = {};
 
@@ -624,6 +687,7 @@
         const notamGrid = document.getElementById('notam-grid');
         const nlpBriefingSection = document.getElementById('nlp-briefing-section');
         const riskAssessmentSection = document.getElementById('risk-assessment-section');
+        const chartsSection = document.getElementById('charts-section');
 
         // Update UTC clock
         function updateClock() {
@@ -810,6 +874,9 @@
                 displayNLPBriefing(data.nlp_briefing_summary);
                 displayRiskAssessment(data.risk_assessment);
                 
+                // Display new charts
+                displayWeatherCharts(data.timeline);
+                
                 showSuccess(`AI Analysis completed: ${data.timeline.length} intervals, ${data.notams?.length || 0} NOTAMs`);
                 
             } catch (error) {
@@ -845,6 +912,16 @@
         }
 
         function displayRouteOverview(route) {
+            // Update route title based on risk assessment
+            const routeTitle = document.getElementById('route-title');
+            if (route.risk_assessment) {
+                const riskLevel = route.risk_assessment.risk_level;
+                const riskPercentage = route.risk_assessment.risk_percentage;
+                routeTitle.textContent = `Flight Route Analysis - ${riskLevel} (${riskPercentage}% Risk Score)`;
+            } else {
+                routeTitle.textContent = 'Flight Route Analysis';
+            }
+            
             document.getElementById('total-distance').textContent = Math.round(route.total_distance);
             document.getElementById('total-time').textContent = formatFlightTime(route.total_flight_time);
             document.getElementById('departure-airport').textContent = route.departure;
@@ -867,6 +944,176 @@
             document.getElementById('notams-count').textContent = summary.notams_count;
             
             weatherSummary.style.display = 'block';
+        }
+
+        function displayWeatherCharts(timeline) {
+            if (!timeline || timeline.length === 0) return;
+            
+            // Prepare chart data
+            const labels = timeline.map(item => item.start_time_local);
+            const windSpeeds = timeline.map(item => item.wind_speed || 0);
+            const windGusts = timeline.map(item => item.wind_gust || 0);
+            const visibility = timeline.map(item => item.visibility || 10);
+            
+            // Wind Speed Chart
+            createWindChart(labels, windSpeeds, windGusts);
+            
+            // Visibility Chart
+            createVisibilityChart(labels, visibility);
+            
+            chartsSection.style.display = 'block';
+        }
+
+        function createWindChart(labels, windSpeeds, windGusts) {
+            const ctx = document.getElementById('windChart').getContext('2d');
+            
+            if (windChart) {
+                windChart.destroy();
+            }
+            
+            windChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Wind Speed (kts)',
+                        data: windSpeeds,
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
+                    }, {
+                        label: 'Wind Gusts (kts)',
+                        data: windGusts,
+                        borderColor: 'rgba(239, 68, 68, 1)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Speed (knots)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time (UTC)'
+                            },
+                            ticks: {
+                                maxRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return `Time: ${tooltipItems[0].label}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createVisibilityChart(labels, visibility) {
+            const ctx = document.getElementById('visibilityChart').getContext('2d');
+            
+            if (visibilityChart) {
+                visibilityChart.destroy();
+            }
+            
+            // Color code based on visibility thresholds
+            const backgroundColors = visibility.map(vis => {
+                if (vis < 1) return 'rgba(239, 68, 68, 0.6)';      // Severe - Red
+                else if (vis < 3) return 'rgba(245, 158, 11, 0.6)'; // Significant - Yellow
+                else return 'rgba(16, 185, 129, 0.6)';              // Clear - Green
+            });
+            
+            const borderColors = visibility.map(vis => {
+                if (vis < 1) return 'rgba(239, 68, 68, 1)';
+                else if (vis < 3) return 'rgba(245, 158, 11, 1)';
+                else return 'rgba(16, 185, 129, 1)';
+            });
+            
+            visibilityChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Visibility (SM)',
+                        data: visibility,
+                        backgroundColor: backgroundColors,
+                        borderColor: borderColors,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 12,
+                            title: {
+                                display: true,
+                                text: 'Visibility (Statute Miles)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    if (value >= 10) return '10+';
+                                    return value;
+                                }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time (UTC)'
+                            },
+                            ticks: {
+                                maxRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return `Time: ${tooltipItems[0].label}`;
+                                },
+                                label: function(context) {
+                                    const vis = context.raw;
+                                    let condition;
+                                    if (vis < 1) condition = 'Severe';
+                                    else if (vis < 3) condition = 'Significant';
+                                    else condition = 'Clear';
+                                    
+                                    return `Visibility: ${vis >= 10 ? '10+' : vis} SM (${condition})`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         function displayNOTAMs(notams) {
