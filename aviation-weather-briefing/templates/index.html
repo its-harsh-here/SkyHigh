@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aviation Weather Briefing System</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-plane"></i> Aviation Weather Briefing
+            </a>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <!-- Input Panel -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-route"></i> Flight Plan Input</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Tab Navigation -->
+                        <ul class="nav nav-tabs" id="inputTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="manual-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#manual" type="button" role="tab">Manual Entry</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="upload-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#upload" type="button" role="tab">Upload Plan</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="individual-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#individual" type="button" role="tab">Individual Report</button>
+                            </li>
+                        </ul>
+
+                        <!-- Tab Content -->
+                        <div class="tab-content mt-3" id="inputTabContent">
+                            <!-- Manual Entry Tab -->
+                            <div class="tab-pane fade show active" id="manual" role="tabpanel">
+                                <form id="manualForm">
+                                    <div class="mb-3">
+                                        <label for="departure" class="form-label">Departure Airport (ICAO)</label>
+                                        <input type="text" class="form-control" id="departure" 
+                                               placeholder="e.g., KJFK" maxlength="4" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="arrival" class="form-label">Arrival Airport (ICAO)</label>
+                                        <input type="text" class="form-control" id="arrival" 
+                                               placeholder="e.g., KLAX" maxlength="4" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="waypoints" class="form-label">Waypoints (Optional)</label>
+                                        <input type="text" class="form-control" id="waypoints" 
+                                               placeholder="e.g., KORD, KDEN (comma separated)">
+                                        <div class="form-text">Enter waypoints in ICAO format, separated by commas</div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="fas fa-search"></i> Get Route Briefing
+                                    </button>
+                                </form>
+                            </div>
+
+                            <!-- Upload Tab -->
+                            <div class="tab-pane fade" id="upload" role="tabpanel">
+                                <div class="mb-3">
+                                    <label for="flightPlanFile" class="form-label">Upload Flight Plan</label>
+                                    <input type="file" class="form-control" id="flightPlanFile" 
+                                           accept=".txt,.fpl,.xml">
+                                    <div class="form-text">Supported formats: TXT, FPL, XML</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="flightPlanText" class="form-label">Or Paste Flight Plan Text</label>
+                                    <textarea class="form-control" id="flightPlanText" rows="6" 
+                                              placeholder="Paste your flight plan text here..."></textarea>
+                                </div>
+                                <button type="button" class="btn btn-primary w-100" onclick="analyzeFlightPlan()">
+                                    <i class="fas fa-upload"></i> Analyze Flight Plan
+                                </button>
+                            </div>
+
+                            <!-- Individual Report Tab -->
+                            <div class="tab-pane fade" id="individual" role="tabpanel">
+                                <form id="individualForm">
+                                    <div class="mb-3">
+                                        <label for="airportCode" class="form-label">Airport Code (ICAO)</label>
+                                        <input type="text" class="form-control" id="airportCode" 
+                                               placeholder="e.g., KJFK" maxlength="4" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Report Types</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" value="METAR" 
+                                                   id="metarCheck" checked>
+                                            <label class="form-check-label" for="metarCheck">METAR</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" value="TAF" 
+                                                   id="tafCheck">
+                                            <label class="form-check-label" for="tafCheck">TAF</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" value="PIREP" 
+                                                   id="pirepCheck">
+                                            <label class="form-check-label" for="pirepCheck">PIREP</label>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="fas fa-cloud"></i> Get Weather Report
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Weather Summary -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h6><i class="fas fa-tachometer-alt"></i> Quick Summary</h6>
+                    </div>
+                    <div class="card-body" id="quickSummary">
+                        <p class="text-muted">Enter flight details to see weather summary</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div class="col-md-8">
+                <div id="loadingSpinner" class="text-center d-none">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Fetching weather data...</p>
+                </div>
+
+                <!-- Weather Briefing Results -->
+                <div id="briefingResults" class="d-none">
+                    <!-- Executive Summary -->
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5><i class="fas fa-brain"></i> Intelligent Weather Analysis</h5>
+                            <span id="riskAssessment" class="badge"></span>
+                        </div>
+                        <div class="card-body">
+                            <div id="executiveSummary" class="mb-3"></div>
+                            <div id="decisionFactors"></div>
+                        </div>
+                    </div>
+
+                    <!-- Pilot Recommendations -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6><i class="fas fa-user-pilot"></i> Pilot Action Items</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="pilotRecommendations"></div>
+                        </div>
+                    </div>
+
+                    <!-- Flight Phase Guidance -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6><i class="fas fa-route"></i> Flight Phase Guidance</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="phaseGuidance"></div>
+                        </div>
+                    </div>
+
+                    <!-- Traditional Briefing -->
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6><i class="fas fa-clipboard-list"></i> Traditional Weather Briefing</h6>
+                            <span id="overallCategory" class="badge"></span>
+                        </div>
+                        <div class="card-body">
+                            <div id="briefingSummary"></div>
+                        </div>
+                    </div>
+
+                    <!-- Visualizations -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-wind"></i> Wind Analysis</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="windChart"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-eye"></i> Visibility & Ceiling</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="visibilityChart"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Route Map -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6><i class="fas fa-map"></i> Route Weather Map</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="routeMap" style="height: 400px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Weather Timeline -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6><i class="fas fa-chart-line"></i> Weather Timeline</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="weatherTimeline"></div>
+                        </div>
+                    </div>
+
+                    <!-- Detailed Airport Weather -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h6><i class="fas fa-list"></i> Detailed Airport Weather</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="airportDetails"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Individual Report Results -->
+                <div id="individualResults" class="d-none">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5><i class="fas fa-cloud"></i> Weather Report</h5>
+                        </div>
+                        <div class="card-body" id="individualWeatherData">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

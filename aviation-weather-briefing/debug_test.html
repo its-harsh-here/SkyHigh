@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Weather API Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .airport { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>Aviation Weather API Debug Test</h1>
+    <button onclick="testMultipleAirports()">Test Multiple Airports</button>
+    <button onclick="testFlightRoute()">Test Flight Route</button>
+    <div id="results"></div>
+
+    <script>
+        async function testMultipleAirports() {
+            const airports = ['KJFK', 'KLAX', 'KORD', 'KDEN', 'KSEA', 'KPHX'];
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>Testing Individual Airports...</h2>';
+
+            for (const airport of airports) {
+                try {
+                    const response = await fetch('/api/weather/individual', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            airport_code: airport,
+                            report_types: ['METAR']
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        results.innerHTML += `<div class="airport error">${airport}: Error - ${data.error}</div>`;
+                    } else {
+                        const metar = data.metar || {};
+                        const analysis = data.analysis || {};
+                        results.innerHTML += `
+                            <div class="airport success">
+                                <strong>${airport}</strong><br>
+                                Wind: ${metar.wind_direction || 'N/A'}° at ${metar.wind_speed || 'N/A'} kt<br>
+                                Temp: ${metar.temperature || 'N/A'}°C<br>
+                                Visibility: ${metar.visibility || 'N/A'} SM<br>
+                                Flight Category: ${metar.flight_category || 'N/A'}<br>
+                                Weather Category: ${analysis.category || 'N/A'}<br>
+                                Raw: ${(metar.raw_text || '').substring(0, 60)}...
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    results.innerHTML += `<div class="airport error">${airport}: Exception - ${error.message}</div>`;
+                }
+            }
+        }
+
+        async function testFlightRoute() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>Testing Flight Route Analysis...</h2>';
+
+            try {
+                const response = await fetch('/api/flight-plan/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        departure: 'KJFK',
+                        arrival: 'KLAX',
+                        waypoints: ['KORD', 'KDEN']
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    results.innerHTML += `<div class="error">Route Analysis Error: ${data.error}</div>`;
+                } else {
+                    results.innerHTML += `<h3>Route: ${data.airports ? data.airports.join(' → ') : 'N/A'}</h3>`;
+                    results.innerHTML += `<p><strong>Overall Category:</strong> ${data.briefing?.overall_category || 'N/A'}</p>`;
+                    
+                    // Display NLP Analysis
+                    if (data.nlp_analysis) {
+                        results.innerHTML += `
+                            <div style="background: #f8f9fa; padding: 15px; margin: 15px 0; border-radius: 5px;">
+                                <h4>🧠 AI Analysis</h4>
+                                <p><strong>Risk Level:</strong> ${data.nlp_analysis.risk_assessment || 'N/A'}</p>
+                                <p><strong>Executive Summary:</strong></p>
+                                <p style="font-style: italic;">${data.nlp_analysis.executive_summary || 'N/A'}</p>
+                                
+                                <h5>Pilot Recommendations:</h5>
+                                <ul>
+                                    ${(data.nlp_analysis.pilot_recommendations || []).map(rec => `<li>${rec}</li>`).join('')}
+                                </ul>
+                                
+                                <h5>Decision Factors:</h5>
+                                <ul>
+                                    ${(data.nlp_analysis.decision_factors || []).map(factor => `<li>${factor}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    }
+                    
+                    for (const airport of data.airports || []) {
+                        const weather = data.weather_data?.[airport] || {};
+                        const metar = weather.metar || {};
+                        const analysis = weather.analysis || {};
+                        
+                        results.innerHTML += `
+                            <div class="airport">
+                                <strong>${airport}</strong><br>
+                                Wind: ${metar.wind_direction || 'N/A'}° at ${metar.wind_speed || 'N/A'} kt<br>
+                                Temp: ${metar.temperature || 'N/A'}°C<br>
+                                Category: ${analysis.category || 'N/A'}<br>
+                                Flight Cat: ${metar.flight_category || 'N/A'}
+                            </div>
+                        `;
+                    }
+                }
+            } catch (error) {
+                results.innerHTML += `<div class="error">Route Analysis Exception: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
