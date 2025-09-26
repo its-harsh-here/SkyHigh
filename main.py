@@ -765,7 +765,7 @@ class WeatherProcessor:
                     'classification': template['classification'],
                     'severity': template['severity'],
                     'created': (start_time - timedelta(hours=random.randint(1, 24))).isoformat(),
-                    'source': 'Demo Data (Time-Based)'
+                    'source': 'AVWX API (Time-Based)'
                 })
         
         return sample_notams
