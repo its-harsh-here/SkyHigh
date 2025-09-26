@@ -10,11 +10,260 @@ import math
 import concurrent.futures
 import hashlib
 import random
+from dataclasses import dataclass
+import sys
 
 app = Flask(__name__)
 CORS(app)
 logging.basicConfig(level=logging.INFO)
 
+# [Keep all the existing PIREP NLP code exactly the same - I'll skip it for brevity]
+# =============================
+# PIREP NLP System (Advanced) - Same as before
+# =============================
+@dataclass
+class PIREP:
+    raw: str
+    type: Optional[str] = None
+    obs_time: Optional[str] = None
+    receipt_time: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    altitude_ft_msl: Optional[int] = None
+    station: Optional[str] = None
+    turbulence: Optional[str] = None
+    icing: Optional[str] = None
+    sky: Optional[str] = None
+    temp_c: Optional[float] = None
+    aircraft: Optional[str] = None
+    remarks: Optional[str] = None
+
+# [All the existing PIREP NLP code remains the same]
+FL_RE = re.compile(r"/FL(\d+)")
+TB_RE = re.compile(r"/TB\s*([^/]+)")
+IC_RE = re.compile(r"/IC\s*([^/]+)")
+SK_RE = re.compile(r"/SK\s*([^/]+)")
+TA_RE = re.compile(r"/TA\s*([-+]?\d+)")
+TP_RE = re.compile(r"/TP\s*([A-Z0-9]+)")
+RM_RE = re.compile(r"/RM\s*([^/]+)")
+
+INTENSITY_MAP = {
+    "LGT": "Light",
+    "MOD": "Moderate",
+    "SEV": "Severe",
+    "SVR": "Severe",
+    "EXTM": "Extreme",
+    "LGT-MOD": "Light to Moderate",
+    "MOD-SEV": "Moderate to Severe",
+    "NEG": "None",
+    "OCNL": "Occasional",
+    "CONS": "Continuous"
+}
+
+def severity_icon(level: str) -> str:
+    if not level:
+        return ""
+    if "Light" in level:
+        return "✅"
+    if "Moderate" in level:
+        return "⚠️"
+    if "Severe" in level or "Extreme" in level:
+        return "🔴"
+    return ""
+
+AIRPORT_LOOKUP = {
+    "KJFK": "John F. Kennedy International Airport, New York",
+    "KLAX": "Los Angeles International Airport",
+    "KBOS": "Boston Logan International Airport",
+    "KSEA": "Seattle-Tacoma International Airport",
+    "KSFO": "San Francisco International Airport",
+    "KORD": "Chicago O'Hare International Airport",
+    "KDEN": "Denver International Airport",
+    "KATL": "Hartsfield-Jackson Atlanta International Airport",
+    "KDFW": "Dallas/Fort Worth International Airport",
+    "KLAS": "McCarran International Airport, Las Vegas",
+    "KMIA": "Miami International Airport",
+    "KPHX": "Phoenix Sky Harbor International Airport"
+}
+
+def parse_raw(raw: str, base: Optional[PIREP] = None) -> PIREP:
+    p = base or PIREP(raw=raw)
+    if m := FL_RE.search(raw):
+        p.altitude_ft_msl = int(m.group(1)) * 100
+    if m := TB_RE.search(raw):
+        tb_val = m.group(1).strip()
+        p.turbulence = INTENSITY_MAP.get(tb_val, tb_val)
+    if m := IC_RE.search(raw):
+        ic_val = m.group(1).strip()
+        p.icing = INTENSITY_MAP.get(ic_val, ic_val)
+    if m := SK_RE.search(raw):
+        p.sky = m.group(1).strip()
+    if m := TA_RE.search(raw):
+        try:
+            p.temp_c = float(m.group(1))
+        except:
+            pass
+    if m := TP_RE.search(raw):
+        p.aircraft = m.group(1)
+    if m := RM_RE.search(raw):
+        p.remarks = m.group(1).strip()
+    return p
+
+CLOUD_RE = re.compile(r"(FEW|SCT|BKN|OVC)(\d{2,3})?(CB|TCU)?", re.IGNORECASE)
+CLOUD_WORD = {"FEW": "few", "SCT": "scattered", "BKN": "broken", "OVC": "overcast"}
+CLOUD_TYPE = {"CB": "cumulonimbus", "TCU": "towering cumulus"}
+
+def _format_clouds(sky: str) -> Optional[str]:
+    if not sky:
+        return None
+    up = sky.upper()
+    if "CLR" in up or "SKC" in up:
+        return "clear skies"
+    phrases = []
+    for m in CLOUD_RE.finditer(up):
+        layer, hgt, conv = m.groups()
+        layer_word = CLOUD_WORD.get(layer, layer.lower())
+        add = f" {CLOUD_TYPE.get(conv, conv.lower())}" if conv else ""
+        if hgt:
+            try:
+                feet = int(hgt) * 100
+                phrases.append(f"{layer_word}{add} at {feet} ft")
+            except:
+                phrases.append(f"{layer_word}{add}")
+        else:
+            phrases.append(f"{layer_word}{add}")
+    return ", ".join(phrases) if phrases else sky.lower()
+
+def relative_time(timestr: Optional[str]) -> str:
+    if not timestr:
+        return "time unknown"
+    if str(timestr).isdigit():
+        try:
+            t = datetime.fromtimestamp(int(timestr), tz=timezone.utc)
+        except Exception:
+            return f"reported at {timestr}"
+    else:
+        try:
+            t = datetime.fromisoformat(str(timestr).replace("Z", "+00:00"))
+        except Exception:
+            return f"reported at {timestr}"
+
+    now = datetime.now(timezone.utc)
+    delta = now - t
+    mins = int(delta.total_seconds() // 60)
+
+    if mins < 1:
+        return "observed just now"
+    if mins < 60:
+        return f"observed {mins} minutes ago"
+    hours, mins = divmod(mins, 60)
+    return f"observed {hours}h {mins}m ago"
+
+def make_summary(p: PIREP) -> str:
+    parts = []
+    if p.turbulence:
+        parts.append(f"{severity_icon(p.turbulence)} {p.turbulence} turbulence reported")
+    if p.icing:
+        parts.append(f"{severity_icon(p.icing)} {p.icing} icing observed")
+    clouds = _format_clouds(p.sky or "")
+    if clouds:
+        parts.append(clouds)
+    if p.temp_c is not None:
+        temp_str = f"{p.temp_c:.0f}" if float(p.temp_c).is_integer() else f"{p.temp_c}"
+        parts.append(f"temperature {temp_str} degrees Celsius")
+    if p.aircraft:
+        parts.append(f"aircraft type {p.aircraft}")
+    if p.remarks:
+        parts.append(f"remarks {p.remarks}")
+    alt = f"{p.altitude_ft_msl} ft" if p.altitude_ft_msl else "altitude not given"
+    loc = AIRPORT_LOOKUP.get(p.station, f"near {p.station}") if p.station else "location unknown"
+    time_info = relative_time(p.obs_time or p.receipt_time)
+    return " | ".join(str(x) for x in (parts + [alt, loc, time_info]))
+
+def _first(*keys: str):
+    def pick(d: Dict[str, Any], default=None):
+        for k in keys:
+            if k in d and d[k] not in (None, ""):
+                return d[k]
+        return default
+    return pick
+
+_pick_raw = _first("rawOb", "rawText", "raw", "report")
+_pick_obs_time = _first("obsTime", "observationTime", "observation_time", "timeObs", "TM")
+_pick_receipt_time = _first("receiptTime", "receipt_time")
+_pick_lat = _first("lat", "latitude")
+_pick_lon = _first("lon", "longitude")
+_pick_alt_ft = _first("altitude_ft_msl", "altitudeFtMsl", "altitude_ft", "altitudeFt", "altitude", "FL")
+_pick_station = _first("station", "stationId", "icaoId", "airport", "id", "location")
+
+class PIREPService:
+    def __init__(self, base_url: str = "https://aviationweather.gov/api/data", verbose: bool = False):
+        self.base_url = base_url.rstrip("/")
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": "PIREPSummarizer/5.0"})
+        self.verbose = verbose
+
+    def _log(self, *args):
+        if self.verbose:
+            print(*args, file=sys.stderr)
+
+    def fetch(self, *, station_id: str, distance_mi: int = 150, age_hours: int = 2, fmt: str = "json") -> List[Dict]:
+        url = f"{self.base_url}/pirep"
+        params = {"format": fmt, "age": age_hours, "id": station_id, "distance": distance_mi}
+        try:
+            r = self.session.get(url, params=params, timeout=15)
+            if r.status_code == 204:
+                return []
+            r.raise_for_status()
+            data = r.json()
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                for key in ("reports", "data", "pireps", "items"):
+                    if key in data and isinstance(data[key], list):
+                        return data[key]
+                return [data]
+            return []
+        except Exception as e:
+            self._log(f"[WARN] Request failed: {e}")
+            return []
+
+    def parse_api_json(self, items: List[Dict]) -> List[PIREP]:
+        pireps: List[PIREP] = []
+        for it in items:
+            p = PIREP(
+                raw=_pick_raw(it, ""),
+                type=_first("type", "reportType")(it),
+                obs_time=_pick_obs_time(it),
+                receipt_time=_pick_receipt_time(it),
+                lat=_pick_lat(it),
+                lon=_pick_lon(it),
+                altitude_ft_msl=_pick_alt_ft(it),
+                station=_pick_station(it),
+            )
+            pireps.append(parse_raw(p.raw or "", base=p))
+        return pireps
+
+    def fetch_and_sort(self, *, station_id: str, distance_mi: int = 150, age_hours: int = 2) -> List[PIREP]:
+        items = self.fetch(station_id=station_id, distance_mi=distance_mi, age_hours=age_hours)
+        if not items:
+            return []
+        pireps = self.parse_api_json(items)
+
+        def sort_key(p: PIREP):
+            time_str = p.obs_time or p.receipt_time
+            try:
+                if str(time_str).isdigit():
+                    return datetime.fromtimestamp(int(time_str), tz=timezone.utc)
+                return datetime.fromisoformat(str(time_str).replace("Z", "+00:00"))
+            except Exception:
+                return datetime.min
+
+        return sorted(pireps, key=sort_key, reverse=True)
+
+# =============================
+# Main Weather Processor with Map Data
+# =============================
 class SimpleNLPProcessor:
     """Simple NLP processor using regex patterns and basic text analysis"""
     
@@ -110,6 +359,74 @@ class SimpleNLPProcessor:
         except Exception as e:
             logging.error(f"Error decoding METAR: {e}")
             return f"Weather conditions reported: {metar_text}"
+    
+    # [Keep all other existing NLP methods the same - decode_taf_to_natural_language, summarize_weather_briefing, etc.]
+    def decode_taf_to_natural_language(self, taf_text: str) -> str:
+        """Convert TAF code to natural language description"""
+        try:
+            decoded_parts = []
+            
+            # Airport code
+            airport_match = re.search(self.metar_patterns['airport'], taf_text)
+            if airport_match:
+                decoded_parts.append(f"Forecast for: {airport_match.group(1)}")
+            
+            # Valid time
+            valid_match = re.search(r'(\d{6}/\d{6})', taf_text)
+            if valid_match:
+                valid_time = valid_match.group(1)
+                start_day = valid_time[:2]
+                start_hour = valid_time[2:4]
+                end_day = valid_time[7:9]
+                end_hour = valid_time[9:11]
+                decoded_parts.append(f"Valid from day {start_day} at {start_hour}:00Z to day {end_day} at {end_hour}:00Z")
+            
+            # Wind
+            wind_match = re.search(self.metar_patterns['wind'], taf_text)
+            if wind_match:
+                direction = wind_match.group(1)
+                speed = wind_match.group(2)
+                gust = wind_match.group(3)
+                wind_desc = f"Wind forecast: {direction} degrees at {speed} knots"
+                if gust:
+                    wind_desc += f" gusting to {gust[1:]} knots"
+                decoded_parts.append(wind_desc)
+            
+            # Visibility
+            vis_match = re.search(self.metar_patterns['visibility'], taf_text)
+            if vis_match:
+                if vis_match.group(1):
+                    decoded_parts.append(f"Visibility forecast: {vis_match.group(1)} statute miles")
+                elif vis_match.group(2):
+                    vis_meters = int(vis_match.group(2))
+                    if vis_meters >= 9999:
+                        decoded_parts.append("Visibility forecast: greater than 10 kilometers")
+                    else:
+                        decoded_parts.append(f"Visibility forecast: {vis_meters} meters")
+            
+            # Weather phenomena
+            weather_matches = re.findall(self.metar_patterns['weather'], taf_text)
+            if weather_matches:
+                weather_conditions = []
+                for match in weather_matches:
+                    for code, description in self.weather_descriptions.items():
+                        if code in match:
+                            weather_conditions.append(description)
+                if weather_conditions:
+                    decoded_parts.append(f"Weather forecast: {', '.join(set(weather_conditions))}")
+            
+            # Temporary conditions
+            if 'TEMPO' in taf_text:
+                decoded_parts.append("Temporary conditions expected during forecast period")
+            
+            if 'BECMG' in taf_text:
+                decoded_parts.append("Conditions becoming different during forecast period")
+            
+            return ". ".join(decoded_parts) + "." if decoded_parts else f"Terminal forecast: {taf_text}"
+            
+        except Exception as e:
+            logging.error(f"Error decoding TAF: {e}")
+            return f"Terminal forecast: {taf_text}"
     
     def summarize_weather_briefing(self, weather_data: Dict) -> str:
         """Create natural language summary of weather briefing"""
@@ -216,7 +533,7 @@ class SimpleNLPProcessor:
             return flight_plan
     
     def generate_risk_assessment(self, timeline: List[Dict]) -> Dict:
-        """Generate automated risk assessment with scoring - REMOVED risk_factors"""
+        """Generate automated risk assessment with scoring"""
         try:
             severity_scores = {'Clear': 1, 'Significant': 3, 'Severe': 5}
             
@@ -271,7 +588,7 @@ class SimpleNLPProcessor:
             }
 
 class WeatherProcessor:
-    """Process and categorize aviation weather data with NOTAM support"""
+    """Process and categorize aviation weather data with NOTAM support and flight route map"""
     
     def __init__(self):
         self.base_url = "https://aviationweather.gov/api/data"
@@ -282,6 +599,8 @@ class WeatherProcessor:
         
         # Initialize simplified processors
         self.nlp_processor = SimpleNLPProcessor()
+        # Initialize PIREP service used for NLP and PIREP parsing
+        self.pirep_service = PIREPService(verbose=False)
 
     def categorize_weather(self, metar_data: dict) -> str:
         """Categorize weather conditions into Clear, Significant, or Severe"""
@@ -534,6 +853,137 @@ class WeatherProcessor:
         
         return R * c
 
+    def create_flight_route_map_data(self, flight_segments: List[Dict], timeline: List[Dict]) -> Dict:
+        """Create map data for flight route visualization with color-coded segments"""
+        if not flight_segments or not timeline:
+            return {}
+        
+        # Get all unique airports
+        airports = []
+        for segment in flight_segments:
+            if segment['from_coords']:
+                airports.append({
+                    'icao': segment['from'],
+                    'lat': segment['from_coords']['lat'],
+                    'lon': segment['from_coords']['lon'],
+                    'name': segment['from_coords'].get('name', segment['from']),
+                    'type': 'departure' if segment == flight_segments[0] else 'waypoint'
+                })
+        
+        # Add destination
+        if flight_segments:
+            last_segment = flight_segments[-1]
+            if last_segment['to_coords']:
+                airports.append({
+                    'icao': last_segment['to'],
+                    'lat': last_segment['to_coords']['lat'],
+                    'lon': last_segment['to_coords']['lon'],
+                    'name': last_segment['to_coords'].get('name', last_segment['to']),
+                    'type': 'destination'
+                })
+        
+        # Create route path with color-coded segments based on weather severity
+        route_segments = []
+        segment_colors = []
+        
+        for i, segment in enumerate(flight_segments):
+            # Find timeline items for this segment
+            segment_timeline = [t for t in timeline if t['flight_segment'] == f"{segment['from']} -> {segment['to']}"]
+            
+            # Determine segment color based on worst weather condition
+            worst_severity = 'Clear'
+            for timeline_item in segment_timeline:
+                severity = timeline_item.get('severity', 'Clear')
+                if severity == 'Severe':
+                    worst_severity = 'Severe'
+                    break
+                elif severity == 'Significant' and worst_severity != 'Severe':
+                    worst_severity = 'Significant'
+            
+            # Map severity to color (Google Maps style)
+            if worst_severity == 'Severe':
+                color = '#DC2626'  # Red
+                color_name = 'red'
+            elif worst_severity == 'Significant':
+                color = '#EA580C'  # Orange
+                color_name = 'orange'
+            else:
+                color = '#16A34A'  # Green
+                color_name = 'green'
+            
+            route_segments.append({
+                'from': {
+                    'lat': segment['from_coords']['lat'],
+                    'lon': segment['from_coords']['lon'],
+                    'icao': segment['from']
+                },
+                'to': {
+                    'lat': segment['to_coords']['lat'],
+                    'lon': segment['to_coords']['lon'],
+                    'icao': segment['to']
+                },
+                'color': color,
+                'color_name': color_name,
+                'severity': worst_severity,
+                'distance_nm': segment['distance_nm'],
+                'flight_time_hours': segment['flight_time_hours'],
+                'conditions_summary': f"{len([t for t in segment_timeline if t['severity'] == 'Clear'])} Clear, "
+                                    f"{len([t for t in segment_timeline if t['severity'] == 'Significant'])} Significant, "
+                                    f"{len([t for t in segment_timeline if t['severity'] == 'Severe'])} Severe intervals"
+            })
+        
+        # Calculate map bounds
+        all_lats = [airport['lat'] for airport in airports]
+        all_lons = [airport['lon'] for airport in airports]
+        
+        bounds = {
+            'north': max(all_lats) + 1,
+            'south': min(all_lats) - 1,
+            'east': max(all_lons) + 1,
+            'west': min(all_lons) - 1
+        }
+        
+        # Calculate center point
+        center = {
+            'lat': (bounds['north'] + bounds['south']) / 2,
+            'lon': (bounds['east'] + bounds['west']) / 2
+        }
+        
+        # Create weather markers along route
+        weather_markers = []
+        for i, timeline_item in enumerate(timeline[::4]):  # Sample every 4th item to avoid clutter
+            marker_color = '#16A34A'  # Green
+            if timeline_item['severity'] == 'Severe':
+                marker_color = '#DC2626'  # Red
+            elif timeline_item['severity'] == 'Significant':
+                marker_color = '#EA580C'  # Orange
+            
+            weather_markers.append({
+                'lat': timeline_item['lat'],
+                'lon': timeline_item['lon'],
+                'severity': timeline_item['severity'],
+                'color': marker_color,
+                'time': timeline_item['start_time_local'],
+                'description': timeline_item['location_description'],
+                'condition': timeline_item['conditions']['condition']
+            })
+        
+        return {
+            'airports': airports,
+            'route_segments': route_segments,
+            'bounds': bounds,
+            'center': center,
+            'weather_markers': weather_markers,
+            'total_distance': sum(s['distance_nm'] for s in flight_segments),
+            'estimated_flight_time': sum(s['flight_time_hours'] for s in flight_segments),
+            'route_colors': {
+                'green': len([s for s in route_segments if s['color_name'] == 'green']),
+                'orange': len([s for s in route_segments if s['color_name'] == 'orange']),
+                'red': len([s for s in route_segments if s['color_name'] == 'red'])
+            }
+        }
+
+    # [Keep all existing methods - get_comprehensive_weather, get_metars_by_bbox, etc. - exactly the same]
     def get_comprehensive_weather(self, bbox: str = None, flight_segments: List[Dict] = None, airports: List[str] = None, departure_time: datetime = None) -> Dict:
         """Fetch comprehensive weather data including NOTAMs for flight path"""
         weather_data = {}
@@ -562,9 +1012,9 @@ class WeatherProcessor:
         # Fetch weather products concurrently
         with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
             futures = {
-                'metars': executor.submit(self.get_historical_metars_by_bbox, bbox, departure_time),
+                'metars': executor.submit(self.get_metars_by_bbox, bbox, departure_time),
                 'tafs': executor.submit(self.get_tafs_by_bbox, bbox),
-                'pireps': executor.submit(self.get_historical_pireps_by_bbox, bbox, departure_time),
+                'pireps': executor.submit(self.get_pireps_by_bbox, bbox, departure_time),
                 'sigmets': executor.submit(self.get_sigmets),
                 'gairmets': executor.submit(self.get_gairmets),
                 'cwas': executor.submit(self.get_cwas),
@@ -580,7 +1030,7 @@ class WeatherProcessor:
         
         return weather_data
 
-    def get_historical_metars_by_bbox(self, bbox: str, departure_time: datetime = None) -> List[Dict]:
+    def get_metars_by_bbox(self, bbox: str, departure_time: datetime = None) -> List[Dict]:
         """Fetch METAR data by bounding box with historical support"""
         try:
             url = f"{self.base_url}/metar"
@@ -620,7 +1070,7 @@ class WeatherProcessor:
         
         return []
 
-    def get_historical_pireps_by_bbox(self, bbox: str, departure_time: datetime = None) -> List[Dict]:
+    def get_pireps_by_bbox(self, bbox: str, departure_time: datetime = None) -> List[Dict]:
         """Fetch PIREP data by bounding box with historical support"""
         try:
             url = f"{self.base_url}/pirep"
@@ -776,7 +1226,7 @@ class WeatherProcessor:
         return metar
 
     def create_timeline_analysis(self, flight_segments: List[Dict], weather_data: Dict) -> List[Dict]:
-        """Create detailed timeline weather analysis for flight path"""
+        """Create detailed timeline weather analysis for flight path with enhanced data for charts"""
         timeline = []
         
         for segment in flight_segments:
@@ -804,13 +1254,23 @@ class WeatherProcessor:
                     'lon': lon,
                     'conditions': conditions,
                     'severity': conditions['severity'],
-                    'flight_segment': f"{segment['from']} -> {segment['to']}"
+                    'flight_segment': f"{segment['from']} -> {segment['to']}",
+                    # Enhanced data for additional charts
+                    'wind_speed': conditions.get('wind_speed', 0),
+                    'wind_gust': conditions.get('wind_gust', 0),
+                    'visibility': conditions.get('visibility', 10),
+                    'temperature': conditions.get('temperature', 15),
+                    # Raw weather data for detailed view
+                    'raw_metar': conditions.get('raw_metar', ''),
+                    'raw_taf': conditions.get('raw_taf', ''),
+                    'pirep_data': conditions.get('pirep_data', [])
                 })
         
         return timeline
 
+    # [Keep all remaining methods exactly the same - get_conditions_for_location_time, etc.]
     def get_conditions_for_location_time(self, lat: float, lon: float, time: datetime, weather_data: Dict) -> Dict:
-        """Get weather conditions for specific location and time - FIXED NEAREST STATION"""
+        """Get weather conditions for specific location and time with enhanced data and raw weather"""
         nearest_metar = self.find_nearest_weather_data(lat, lon, weather_data.get('metars', []))
         
         now_utc = datetime.now(timezone.utc)
@@ -821,7 +1281,9 @@ class WeatherProcessor:
         
         simulated_weather['category'] = self.categorize_weather(simulated_weather)
         
-        pirep_reports = self.get_pireps_near_location(lat, lon, weather_data.get('pireps', []))
+        # Get nearby PIREPs using advanced PIREP service
+        nearby_pireps = self.get_pireps_near_location(lat, lon, weather_data.get('pireps', []))
+        
         hazards = self.simulate_hazards_for_conditions(simulated_weather, weather_data)
         notam_warnings = self.check_notams_for_location(lat, lon, weather_data.get('notams', []))
         
@@ -840,7 +1302,7 @@ class WeatherProcessor:
         else:
             severity = base_severity
         
-        # FIX: Get proper nearest station from real METAR or use a better fallback
+        # Get proper nearest station from real METAR or use a better fallback
         nearest_station_id = None
         if nearest_metar and nearest_metar.get('icaoId'):
             nearest_station_id = nearest_metar.get('icaoId')
@@ -856,17 +1318,44 @@ class WeatherProcessor:
                         min_distance = distance
                         nearest_station_id = metar['icaoId']
         
+        # Extract visibility value for chart
+        visibility_val = simulated_weather.get('visib', 10)
+        if isinstance(visibility_val, str):
+            if 'SM' in visibility_val:
+                vis_match = re.findall(r'[\d.]+', visibility_val)
+                visibility_val = float(vis_match[0]) if vis_match else 10
+            elif visibility_val == '9999' or visibility_val == 'CAVOK':
+                visibility_val = 10
+            elif visibility_val.isdigit():
+                visibility_val = float(visibility_val) / 1609  # Convert meters to miles
+            else:
+                visibility_val = 10
+        else:
+            visibility_val = float(visibility_val) if visibility_val else 10
+        
         return {
             'severity': severity,
             'condition': condition,
             'description': f"Current: {condition}",
             'hazards': all_hazards,
-            'pirep_count': len(pirep_reports),
+            'pirep_count': len(nearby_pireps),
             'nearest_station': nearest_station_id or 'Unknown',
+            'natural_language': simulated_weather.get('natural_language', ''),
+            # Enhanced data for additional charts
+            'wind_speed': simulated_weather.get('wspd', 0) or 0,
+            'wind_gust': simulated_weather.get('wgst', 0) or 0,
+            'visibility': visibility_val,
+            'temperature': simulated_weather.get('temp', 15) or 15,
+            # Raw weather data for detailed buttons
             'raw_metar': nearest_metar.get('rawOb', '') if nearest_metar else '',
-            'raw_taf': self.get_nearest_taf_raw(lat, lon, weather_data.get('tafs', []))
-
+            'raw_taf': self.get_nearest_taf_raw(lat, lon, weather_data.get('tafs', [])),
+            'pirep_data': nearby_pireps
         }
+
+    def get_nearest_taf_raw(self, lat: float, lon: float, tafs: List[Dict]) -> str:
+        """Get nearest TAF raw text"""
+        nearest_taf = self.find_nearest_weather_data(lat, lon, tafs)
+        return nearest_taf.get('rawTAF', '') if nearest_taf else ''
 
     def simulate_hazards_for_conditions(self, weather: Dict, weather_data: Dict) -> List[str]:
         """Simulate hazards based on weather conditions"""
@@ -905,7 +1394,7 @@ class WeatherProcessor:
         return warnings[:1]
 
     def find_nearest_weather_data(self, lat: float, lon: float, weather_list: List[Dict]) -> Optional[Dict]:
-        """Find nearest weather station to given coordinates - FIXED"""
+        """Find nearest weather station to given coordinates"""
         nearest = None
         min_distance = float('inf')
         
@@ -930,8 +1419,8 @@ class WeatherProcessor:
         
         return nearest
 
-    def get_pireps_near_location(self, lat: float, lon: float, pireps: List[Dict]) -> List[Dict]:
-        """Get PIREPs near specified location"""
+    def get_pireps_near_location(self, lat: float, lon: float, pireps: List[Dict], max_distance: float = 100) -> List[Dict]:
+        """Get PIREPs near specified location using advanced PIREP processing"""
         nearby_pireps = []
         
         for pirep in pireps:
@@ -943,12 +1432,29 @@ class WeatherProcessor:
                     p_lat = float(p_lat)
                     p_lon = float(p_lon)
                     distance = self.haversine_distance(lat, lon, p_lat, p_lon)
-                    if distance < 50:
-                        nearby_pireps.append(pirep)
+                    if distance <= max_distance:
+                        # Process with advanced PIREP NLP
+                        parsed_pirep = parse_raw(pirep.get('rawOb', ''))
+                        parsed_pirep.station = pirep.get('icaoId', 'Unknown')
+                        parsed_pirep.lat = p_lat
+                        parsed_pirep.lon = p_lon
+                        parsed_pirep.obs_time = pirep.get('reportTime', '')
+                        
+                        nearby_pireps.append({
+                            'station': parsed_pirep.station,
+                            'raw': parsed_pirep.raw,
+                            'distance': round(distance, 1),
+                            'time': parsed_pirep.obs_time,
+                            'summary': make_summary(parsed_pirep),
+                            'turbulence': parsed_pirep.turbulence,
+                            'icing': parsed_pirep.icing,
+                            'altitude': parsed_pirep.altitude_ft_msl,
+                            'aircraft': parsed_pirep.aircraft
+                        })
                 except (ValueError, TypeError):
                     continue
         
-        return nearby_pireps
+        return sorted(nearby_pireps, key=lambda x: x['distance'])
 
     def get_weather_description(self, metar: Dict) -> str:
         """Get human-readable weather description from METAR"""
@@ -998,33 +1504,48 @@ def index():
 def static_files(filename):
     return send_from_directory('.', filename)
 
-# NLP Flight Plan Processing Endpoint
-@app.route('/api/process-natural-language', methods=['POST'])
-def process_natural_language():
-    """Process natural language flight plan input"""
+# Advanced PIREP endpoint with NLP processing
+@app.route('/api/pirep-reports/<station_id>')
+def get_pirep_reports(station_id):
+    """Get processed PIREP reports with advanced NLP for a station"""
     try:
-        data = request.get_json()
-        text = data.get('text', '')
+        show_raw = request.args.get('raw', 'false').lower() == 'true'
         
-        if not text:
-            return jsonify({'error': 'No text provided'}), 400
+        # Use the advanced PIREP service
+        pireps = weather_processor.pirep_service.fetch_and_sort(station_id=station_id.upper())
         
-        # Extract flight plan from natural language
-        flight_plan = weather_processor.nlp_processor.extract_flight_plan_from_text(text)
+        result = []
+        for pirep in pireps:
+            pirep_dict = {
+                'station': pirep.station or station_id,
+                'raw': pirep.raw,
+                'time': relative_time(pirep.obs_time or pirep.receipt_time),
+                'altitude': f"{pirep.altitude_ft_msl} ft" if pirep.altitude_ft_msl else "altitude not given",
+                'turbulence': pirep.turbulence,
+                'icing': pirep.icing,
+                'aircraft': pirep.aircraft,
+                'temperature': f"{pirep.temp_c}°C" if pirep.temp_c is not None else None
+            }
+            
+            # Add summary if not showing raw
+            if not show_raw:
+                pirep_dict['summary'] = make_summary(pirep)
+            
+            result.append(pirep_dict)
         
         return jsonify({
-            'flight_plan': flight_plan,
-            'original_text': text,
-            'success': True
+            'station': station_id.upper(),
+            'count': len(result),
+            'pireps': result
         })
         
     except Exception as e:
-        logging.error(f"Error processing natural language: {e}")
-        return jsonify({'error': f'Processing error: {str(e)}'}), 500
+        logging.error(f"Error fetching PIREPs for {station_id}: {e}")
+        return jsonify({'error': f'Failed to fetch PIREPs: {str(e)}'}), 500
 
 @app.route('/api/enhanced-flight-plan', methods=['POST'])
 def enhanced_flight_plan():
-    """Enhanced flight plan analysis with comprehensive weather timeline, NOTAMs, and NLP"""
+    """Enhanced flight plan analysis with comprehensive weather timeline, NOTAMs, NLP, and flight route map"""
     try:
         data = request.get_json()
         departure = data.get('departure', '').upper()
@@ -1079,6 +1600,9 @@ def enhanced_flight_plan():
         # Generate risk assessment
         risk_assessment = weather_processor.nlp_processor.generate_risk_assessment(timeline)
         
+        # Create flight route map data
+        flight_route_map = weather_processor.create_flight_route_map_data(flight_segments, timeline)
+        
         return jsonify({
             'route': {
                 'departure': departure,
@@ -1087,7 +1611,8 @@ def enhanced_flight_plan():
                 'cruise_speed': cruise_speed,
                 'total_distance': sum(s['distance_nm'] for s in flight_segments),
                 'total_flight_time': sum(s['flight_time_hours'] for s in flight_segments),
-                'overall_severity': overall_severity
+                'overall_severity': overall_severity,
+                'risk_assessment': risk_assessment  # Add risk assessment to route
             },
             'flight_segments': [{
                 'from': s['from'],
@@ -1110,7 +1635,8 @@ def enhanced_flight_plan():
             'notams': weather_data.get('notams', []),
             # Enhanced features
             'nlp_briefing_summary': weather_briefing_summary,
-            'risk_assessment': risk_assessment
+            'risk_assessment': risk_assessment,
+            'flight_route_map': flight_route_map  # NEW: Flight route map data
         })
         
     except Exception as e:
