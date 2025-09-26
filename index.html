@@ -552,7 +552,7 @@
                 </div>
             </section>
 
-            <!-- Risk Assessment -->
+            <!-- Risk Assessment (REMOVED Risk Factors Section) -->
             <section id="risk-assessment-section" class="risk-assessment-section">
                 <h2 style="margin-bottom: 1rem;">AI Risk Assessment</h2>
                 <div id="risk-assessment-content">
@@ -561,10 +561,7 @@
                         <p id="risk-percentage">--</p>
                         <p id="risk-recommendation" style="margin-top: 0.5rem; font-style: italic;">--</p>
                     </div>
-                    <div id="risk-factors">
-                        <h4>Risk Factors Identified:</h4>
-                        <ul id="risk-factors-list"></ul>
-                    </div>
+                    <!-- REMOVED: Risk Factors Section -->
                 </div>
             </section>
 
@@ -865,7 +862,6 @@
             const riskLevel = document.getElementById('risk-level');
             const riskPercentage = document.getElementById('risk-percentage');
             const riskRecommendation = document.getElementById('risk-recommendation');
-            const riskFactorsList = document.getElementById('risk-factors-list');
             
             // Set risk level styling
             riskLevelDisplay.className = `risk-${riskData.risk_level.toLowerCase().replace(' ', '-').replace('risk', '')}`;
@@ -873,20 +869,6 @@
             riskLevel.textContent = riskData.risk_level;
             riskPercentage.textContent = `Risk Score: ${riskData.risk_percentage}%`;
             riskRecommendation.textContent = riskData.recommendation;
-            
-            // Display risk factors
-            riskFactorsList.innerHTML = '';
-            if (riskData.risk_factors && riskData.risk_factors.length > 0) {
-                riskData.risk_factors.forEach(factor => {
-                    const li = document.createElement('li');
-                    li.textContent = factor;
-                    riskFactorsList.appendChild(li);
-                });
-            } else {
-                const li = document.createElement('li');
-                li.textContent = 'No specific risk factors identified';
-                riskFactorsList.appendChild(li);
-            }
             
             riskAssessmentSection.style.display = 'block';
         }
@@ -982,7 +964,7 @@
                           `<p><strong>Advisories:</strong> ${item.conditions.hazards.join(', ')}</p>` : ''}
                         ${item.conditions.pirep_count > 0 ? 
                           `<p><strong>Pilot Reports:</strong> ${item.conditions.pirep_count} in area</p>` : ''}
-                        ${item.conditions.nearest_station ? 
+                        ${item.conditions.nearest_station && item.conditions.nearest_station !== 'Unknown' ? 
                           `<p><strong>Nearest Station:</strong> ${item.conditions.nearest_station}</p>` : ''}
                     </div>
                 `;
