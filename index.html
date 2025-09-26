@@ -911,4 +911,222 @@
             document.getElementById('sigmets-count').textContent = summary.sigmets_count;
             document.getElementById('gairmets-count').textContent = summary.gairmets_count;
             document.getElementById('cwas-count').textContent = summary.cwas_count;
-            document.getElementById('not
+            document.getElementById('notams-count').textContent = summary.notams_count;
+            
+            weatherSummary.style.display = 'block';
+        }
+
+        function displayNOTAMs(notams) {
+            notamGrid.innerHTML = '';
+            
+            if (notams.length === 0) {
+                notamGrid.innerHTML = '<p style="text-align: center; color: var(--gray-600); padding: 2rem;">No NOTAMs found for this route.</p>';
+            } else {
+                notams.forEach(notam => {
+                    const notamItem = document.createElement('div');
+                    notamItem.className = `notam-item severity-${notam.severity.toLowerCase()}`;
+                    
+                    const startTime = notam.start_time ? new Date(notam.start_time).toLocaleString() : 'N/A';
+                    const endTime = notam.end_time ? new Date(notam.end_time).toLocaleString() : 'N/A';
+                    
+                    notamItem.innerHTML = `
+                        <div class="notam-header">
+                            <div class="notam-id">${notam.airport} - ${notam.notam_id}</div>
+                            <div class="notam-classification">${notam.classification}</div>
+                        </div>
+                        <div class="notam-text">${notam.text}</div>
+                        <div class="notam-details">
+                            <div><strong>Effective:</strong> ${startTime}</div>
+                            <div><strong>Until:</strong> ${endTime}</div>
+                            <div><strong>Source:</strong> ${notam.source}</div>
+                            <div><strong>Severity:</strong> <span class="severity-badge severity-${notam.severity.toLowerCase()}">${notam.severity}</span></div>
+                        </div>
+                    `;
+                    
+                    notamGrid.appendChild(notamItem);
+                });
+            }
+            
+            notamSection.style.display = 'block';
+        }
+
+        function displayTimeline(timeline) {
+            // Create timeline chart
+            createTimelineChart(timeline);
+            
+            // Create detailed timeline items
+            timelineDetails.innerHTML = '';
+            
+            timeline.forEach(item => {
+                const timelineItem = document.createElement('div');
+                timelineItem.className = `timeline-item ${item.severity.toLowerCase()}`;
+                
+                // Enhanced with NLP insights
+                let nlpInsights = '';
+                if (item.conditions.natural_language) {
+                    nlpInsights += `<p><strong>NLP Summary:</strong> ${item.conditions.natural_language}</p>`;
+                }
+                
+                timelineItem.innerHTML = `
+                    <div class="timeline-time">
+                        ${item.start_time_local} - ${item.end_time_local}
+                    </div>
+                    <div class="timeline-location">
+                        ${item.location_description}
+                    </div>
+                    <div class="timeline-conditions">
+                        <h4>${item.conditions.condition} <span class="severity-badge severity-${item.severity.toLowerCase()}">${item.severity}</span></h4>
+                        <p>${item.conditions.description}</p>
+                        ${nlpInsights}
+                        ${item.conditions.hazards && item.conditions.hazards.length > 0 ? 
+                          `<p><strong>Advisories:</strong> ${item.conditions.hazards.join(', ')}</p>` : ''}
+                        ${item.conditions.pirep_count > 0 ? 
+                          `<p><strong>Pilot Reports:</strong> ${item.conditions.pirep_count} in area</p>` : ''}
+                        ${item.conditions.nearest_station ? 
+                          `<p><strong>Nearest Station:</strong> ${item.conditions.nearest_station}</p>` : ''}
+                    </div>
+                `;
+                
+                timelineDetails.appendChild(timelineItem);
+            });
+            
+            timelineSection.style.display = 'block';
+        }
+
+        function createTimelineChart(timeline) {
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+            
+            // Destroy existing chart
+            if (timelineChart) {
+                timelineChart.destroy();
+            }
+            
+            // Prepare chart data
+            const labels = timeline.map(item => item.start_time_local);
+            const severityData = timeline.map(item => {
+                switch(item.severity) {
+                    case 'Clear': return 1;
+                    case 'Significant': return 2;
+                    case 'Severe': return 3;
+                    default: return 1;
+                }
+            });
+            
+            const backgroundColors = timeline.map(item => {
+                switch(item.severity) {
+                    case 'Clear': return 'rgba(16, 185, 129, 0.6)';
+                    case 'Significant': return 'rgba(245, 158, 11, 0.6)';
+                    case 'Severe': return 'rgba(239, 68, 68, 0.6)';
+                    default: return 'rgba(16, 185, 129, 0.6)';
+                }
+            });
+            
+            const borderColors = timeline.map(item => {
+                switch(item.severity) {
+                    case 'Clear': return 'rgba(16, 185, 129, 1)';
+                    case 'Significant': return 'rgba(245, 158, 11, 1)';
+                    case 'Severe': return 'rgba(239, 68, 68, 1)';
+                    default: return 'rgba(16, 185, 129, 1)';
+                }
+            });
+            
+            timelineChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Weather Severity',
+                        data: severityData,
+                        backgroundColor: backgroundColors,
+                        borderColor: borderColors,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 4,
+                            ticks: {
+                                stepSize: 1,
+                                callback: function(value) {
+                                    switch(value) {
+                                        case 1: return 'Clear';
+                                        case 2: return 'Significant';
+                                        case 3: return 'Severe';
+                                        default: return '';
+                                    }
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'AI-Enhanced Weather & NOTAM Conditions Throughout Flight'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    const index = tooltipItems[0].dataIndex;
+                                    const item = timeline[index];
+                                    return `${item.start_time_local} - ${item.end_time_local}`;
+                                },
+                                label: function(context) {
+                                    const index = context.dataIndex;
+                                    const item = timeline[index];
+                                    let labels = [
+                                        `Severity: ${item.severity}`,
+                                        `Condition: ${item.conditions.condition}`,
+                                        `Location: ${item.location_description}`
+                                    ];
+                                    
+                                    return labels;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function formatFlightTime(hours) {
+            const h = Math.floor(hours);
+            const m = Math.round((hours - h) * 60);
+            return `${h}h ${m}m`;
+        }
+
+        // Event listeners
+        analyzeBtn.addEventListener('click', () => analyzeWeatherTimeline(false));
+        processNlpBtn.addEventListener('click', processNaturalLanguage);
+        analyzeNlpBtn.addEventListener('click', () => analyzeWeatherTimeline(true));
+
+        // Allow Enter key in inputs
+        [departureInput, destinationInput, waypointsInput, cruiseSpeedInput].forEach(input => {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') analyzeBtn.click();
+            });
+        });
+
+        nlpInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) processNlpBtn.click();
+        });
+    </script>
+</body>
+</html>
