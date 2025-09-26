@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enhanced Aviation Weather Briefing System with AI & NLP</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet JavaScript -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
             --primary-blue: #1e3a8a;
@@ -253,7 +257,8 @@
         }
 
         .timeline-section, .weather-summary, .route-overview, .notam-section, 
-        .risk-assessment-section, .nlp-briefing-section, .charts-section {
+        .risk-assessment-section, .nlp-briefing-section, .charts-section,
+        .flight-route-map-section {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
@@ -335,6 +340,69 @@
             font-size: 0.9rem;
             color: var(--gray-600);
             margin-bottom: 0.5rem;
+        }
+
+        /* Flight Route Map Styles */
+        .flight-map-container {
+            height: 500px;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            border: 1px solid var(--gray-200);
+            margin-bottom: 2rem;
+        }
+
+        .map-legend {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: var(--gray-50);
+            border-radius: 0.5rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        .legend-green { background-color: #16A34A; }
+        .legend-orange { background-color: #EA580C; }
+        .legend-red { background-color: #DC2626; }
+
+        .map-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .map-stat-item {
+            text-align: center;
+            padding: 0.75rem;
+            background: var(--gray-50);
+            border-radius: 0.5rem;
+        }
+
+        .map-stat-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--secondary-blue);
+        }
+
+        .map-stat-label {
+            font-size: 0.75rem;
+            color: var(--gray-600);
+            text-transform: uppercase;
         }
 
         .severity-badge {
@@ -527,6 +595,15 @@
             .pirep-details {
                 grid-template-columns: 1fr;
             }
+
+            .map-legend {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .flight-map-container {
+                height: 350px;
+            }
         }
     </style>
 </head>
@@ -590,12 +667,61 @@
                 <p style="font-size: 0.9rem; margin-top: 0.5rem;">
                     • Fetching METAR, TAF, PIREP, SIGMET, G-AIRMET, CWA data<br>
                     • Processing NOTAMs with NLP<br>
-                    • Generating risk assessment with AI
+                    • Generating risk assessment with AI<br>
+                    • Creating interactive flight route map
                 </p>
             </div>
             
             <div id="error-message" class="error" style="display: none;"></div>
             <div id="success-message" class="success" style="display: none;"></div>
+
+            <!-- Flight Route Map Section -->
+            <section id="flight-route-map-section" class="flight-route-map-section">
+                <h2 style="margin-bottom: 1rem;">📍 Interactive Flight Route Map with Weather Conditions</h2>
+                
+                <!-- Map Legend -->
+                <div class="map-legend">
+                    <div class="legend-item">
+                        <div class="legend-color legend-green"></div>
+                        <span>Good Weather Conditions</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color legend-orange"></div>
+                        <span>Significant Weather</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color legend-red"></div>
+                        <span>Severe Weather Conditions</span>
+                    </div>
+                </div>
+
+                <!-- Map Statistics -->
+                <div class="map-stats">
+                    <div class="map-stat-item">
+                        <div class="map-stat-value" id="map-distance">--</div>
+                        <div class="map-stat-label">Total Distance (NM)</div>
+                    </div>
+                    <div class="map-stat-item">
+                        <div class="map-stat-value" id="map-time">--</div>
+                        <div class="map-stat-label">Flight Time</div>
+                    </div>
+                    <div class="map-stat-item">
+                        <div class="map-stat-value" id="map-green-segments">--</div>
+                        <div class="map-stat-label">Clear Segments</div>
+                    </div>
+                    <div class="map-stat-item">
+                        <div class="map-stat-value" id="map-orange-segments">--</div>
+                        <div class="map-stat-label">Caution Segments</div>
+                    </div>
+                    <div class="map-stat-item">
+                        <div class="map-stat-value" id="map-red-segments">--</div>
+                        <div class="map-stat-label">Alert Segments</div>
+                    </div>
+                </div>
+
+                <!-- Interactive Map -->
+                <div id="flight-map" class="flight-map-container"></div>
+            </section>
 
             <!-- Route Overview -->
             <section id="route-overview" class="route-overview">
@@ -719,6 +845,7 @@
         let timelineChart = null;
         let windChart = null;
         let visibilityChart = null;
+        let flightMap = null;
         let currentFlightData = {};
 
         // DOM elements
@@ -734,6 +861,7 @@
         const successMessage = document.getElementById('success-message');
         
         // Section elements
+        const flightRouteMapSection = document.getElementById('flight-route-map-section');
         const routeOverview = document.getElementById('route-overview');
         const weatherSummary = document.getElementById('weather-summary');
         const timelineSection = document.getElementById('timeline-section');
@@ -803,6 +931,118 @@
             }
         }
 
+        // Create and display flight route map
+        function displayFlightRouteMap(mapData) {
+            if (!mapData || !mapData.airports || mapData.airports.length < 2) return;
+
+            // Destroy existing map
+            if (flightMap) {
+                flightMap.remove();
+            }
+
+            // Initialize map
+            flightMap = L.map('flight-map').setView([mapData.center.lat, mapData.center.lon], 4);
+
+            // Add tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(flightMap);
+
+            // Add airport markers
+            mapData.airports.forEach(airport => {
+                let markerColor = 'blue';
+                let markerIcon = '✈️';
+                
+                if (airport.type === 'departure') {
+                    markerColor = 'green';
+                    markerIcon = '🛫';
+                } else if (airport.type === 'destination') {
+                    markerColor = 'red';
+                    markerIcon = '🛬';
+                } else {
+                    markerColor = 'orange';
+                    markerIcon = '📍';
+                }
+
+                const marker = L.marker([airport.lat, airport.lon]).addTo(flightMap);
+                marker.bindPopup(`
+                    <div style="text-align: center;">
+                        <h4>${markerIcon} ${airport.icao}</h4>
+                        <p><strong>${airport.name}</strong></p>
+                        <p>Type: ${airport.type.charAt(0).toUpperCase() + airport.type.slice(1)}</p>
+                        <p>Coordinates: ${airport.lat.toFixed(4)}°, ${airport.lon.toFixed(4)}°</p>
+                    </div>
+                `);
+            });
+
+            // Add route segments with color coding
+            mapData.route_segments.forEach(segment => {
+                const polyline = L.polyline([
+                    [segment.from.lat, segment.from.lon],
+                    [segment.to.lat, segment.to.lon]
+                ], {
+                    color: segment.color,
+                    weight: 6,
+                    opacity: 0.8
+                }).addTo(flightMap);
+
+                // Add popup with segment information
+                polyline.bindPopup(`
+                    <div style="text-align: center;">
+                        <h4>🛩️ ${segment.from.icao} → ${segment.to.icao}</h4>
+                        <p><strong>Weather Condition:</strong> <span style="color: ${segment.color};">${segment.severity}</span></p>
+                        <p><strong>Distance:</strong> ${Math.round(segment.distance_nm)} NM</p>
+                        <p><strong>Flight Time:</strong> ${formatFlightTime(segment.flight_time_hours)}</p>
+                        <p><strong>Conditions:</strong></p>
+                        <p style="font-size: 0.85rem;">${segment.conditions_summary}</p>
+                    </div>
+                `);
+            });
+
+            // Add weather markers along route
+            if (mapData.weather_markers && mapData.weather_markers.length > 0) {
+                mapData.weather_markers.forEach(marker => {
+                    let weatherIcon = '🌤️';
+                    if (marker.severity === 'Severe') {
+                        weatherIcon = '🌩️';
+                    } else if (marker.severity === 'Significant') {
+                        weatherIcon = '🌦️';
+                    }
+
+                    const weatherMarker = L.circleMarker([marker.lat, marker.lon], {
+                        color: marker.color,
+                        fillColor: marker.color,
+                        fillOpacity: 0.6,
+                        radius: 8
+                    }).addTo(flightMap);
+
+                    weatherMarker.bindPopup(`
+                        <div style="text-align: center;">
+                            <h4>${weatherIcon} Weather Report</h4>
+                            <p><strong>Time:</strong> ${marker.time}</p>
+                            <p><strong>Location:</strong> ${marker.description}</p>
+                            <p><strong>Condition:</strong> <span style="color: ${marker.color};">${marker.severity}</span></p>
+                            <p><strong>Details:</strong> ${marker.condition}</p>
+                        </div>
+                    `);
+                });
+            }
+
+            // Fit map to show all markers
+            const group = new L.featureGroup(flightMap._layers);
+            flightMap.fitBounds(group.getBounds().pad(0.1));
+
+            // Update map statistics
+            document.getElementById('map-distance').textContent = Math.round(mapData.total_distance);
+            document.getElementById('map-time').textContent = formatFlightTime(mapData.estimated_flight_time);
+            document.getElementById('map-green-segments').textContent = mapData.route_colors.green || 0;
+            document.getElementById('map-orange-segments').textContent = mapData.route_colors.orange || 0;
+            document.getElementById('map-red-segments').textContent = mapData.route_colors.red || 0;
+
+            // Show map section
+            flightRouteMapSection.style.display = 'block';
+        }
+
         // Analyze weather timeline with AI & NLP
         async function analyzeWeatherTimeline() {
             const departure = departureInput.value.trim().toUpperCase();
@@ -848,6 +1088,11 @@
                 const data = await response.json();
                 currentFlightData = data;
                 
+                // Display flight route map FIRST
+                if (data.flight_route_map) {
+                    displayFlightRouteMap(data.flight_route_map);
+                }
+                
                 // Display results
                 displayRouteOverview(data.route);
                 displayWeatherSummary(data.weather_summary);
@@ -861,7 +1106,7 @@
                 // Display new charts
                 displayWeatherCharts(data.timeline);
                 
-                showSuccess(`AI Analysis completed: ${data.timeline.length} intervals, ${data.notams?.length || 0} NOTAMs`);
+                showSuccess(`✈️ AI Analysis completed: ${data.timeline.length} intervals, ${data.notams?.length || 0} NOTAMs, Interactive map created`);
                 
             } catch (error) {
                 console.error('Error analyzing weather timeline:', error);
@@ -1348,35 +1593,4 @@
                                     const index = context.dataIndex;
                                     const item = timeline[index];
                                     let labels = [
-                                        `Severity: ${item.severity}`,
-                                        `Condition: ${item.conditions.condition}`,
-                                        `Location: ${item.location_description}`
-                                    ];
-                                    
-                                    return labels;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        function formatFlightTime(hours) {
-            const h = Math.floor(hours);
-            const m = Math.round((hours - h) * 60);
-            return `${h}h ${m}m`;
-        }
-
-        // Event listeners
-        analyzeBtn.addEventListener('click', analyzeWeatherTimeline);
-
-        // Allow Enter key in inputs
-        [departureInput, destinationInput, waypointsInput, cruiseSpeedInput].forEach(input => {
-            input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') analyzeBtn.click();
-            });
-        });
-    </script>
-</body>
-</html>
+                                        `
