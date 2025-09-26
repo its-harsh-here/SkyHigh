@@ -120,6 +120,9 @@
             cursor: pointer;
             transition: all 0.3s ease;
             font-size: 1rem;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
         }
 
         .btn-primary {
@@ -134,9 +137,119 @@
             padding: 0.5rem 1rem;
         }
 
+        .btn-info {
+            background: #0ea5e9;
+            color: white;
+            font-size: 0.8rem;
+            padding: 0.4rem 0.8rem;
+        }
+
         .btn:hover {
             transform: translateY(-1px);
             opacity: 0.9;
+        }
+
+        .weather-data-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--gray-200);
+        }
+
+        .weather-data-panel {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--gray-50);
+            border-radius: 0.5rem;
+            border: 1px solid var(--gray-200);
+            display: none;
+        }
+
+        .weather-data-panel h5 {
+            margin-bottom: 1rem;
+            color: var(--primary-blue);
+            font-size: 1rem;
+            font-weight: 600;
+            border-bottom: 2px solid var(--primary-blue);
+            padding-bottom: 0.5rem;
+        }
+
+        .weather-item {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 0.5rem;
+            border-left: 4px solid var(--secondary-blue);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .weather-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .weather-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .weather-station {
+            font-weight: 700;
+            color: var(--primary-blue);
+            font-size: 1rem;
+        }
+
+        .weather-distance {
+            font-size: 0.85rem;
+            color: var(--gray-600);
+            background: var(--gray-100);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+        }
+
+        .weather-raw {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: var(--gray-800);
+            background: #f8f9fa;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            margin-bottom: 0.75rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            border: 1px solid var(--gray-200);
+        }
+
+        .weather-nlp {
+            font-size: 0.9rem;
+            color: var(--gray-700);
+            line-height: 1.5;
+            padding: 0.5rem;
+            background: rgba(59, 130, 246, 0.05);
+            border-radius: 0.25rem;
+            border-left: 3px solid var(--secondary-blue);
+        }
+
+        .pirep-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+        }
+
+        .pirep-detail {
+            background: var(--gray-100);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            text-align: center;
+        }
+
+        .pirep-detail strong {
+            color: var(--primary-blue);
         }
 
         .timeline-section, .weather-summary, .route-overview, .notam-section, 
@@ -176,7 +289,7 @@
         .timeline-item {
             display: flex;
             align-items: flex-start;
-            padding: 1rem;
+            padding: 1.5rem;
             border-radius: 0.5rem;
             border-left: 4px solid;
         }
@@ -214,84 +327,14 @@
         }
 
         .timeline-conditions h4 {
-            margin-bottom: 0.25rem;
-            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
         }
 
         .timeline-conditions p {
-            font-size: 0.85rem;
-            color: var(--gray-600);
-            margin-bottom: 0.25rem;
-        }
-
-        .raw-weather-buttons {
-            margin-top: 0.75rem;
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-
-        .raw-weather-panel {
-            margin-top: 1rem;
-            padding: 1rem;
-            background: var(--gray-50);
-            border-radius: 0.5rem;
-            border: 1px solid var(--gray-200);
-            display: none;
-        }
-
-        .raw-weather-panel h5 {
-            margin-bottom: 0.5rem;
-            color: var(--primary-blue);
             font-size: 0.9rem;
-        }
-
-        .raw-weather-item {
-            margin-bottom: 1rem;
-            padding: 0.75rem;
-            background: white;
-            border-radius: 0.25rem;
-            border-left: 3px solid var(--secondary-blue);
-        }
-
-        .raw-weather-item:last-child {
-            margin-bottom: 0;
-        }
-
-        .raw-weather-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
-        }
-
-        .raw-weather-station {
-            font-weight: 600;
-            color: var(--primary-blue);
-            font-size: 0.85rem;
-        }
-
-        .raw-weather-distance {
-            font-size: 0.75rem;
             color: var(--gray-600);
-        }
-
-        .raw-weather-text {
-            font-family: 'Courier New', monospace;
-            font-size: 0.8rem;
-            color: var(--gray-800);
-            background: #f8f9fa;
-            padding: 0.5rem;
-            border-radius: 0.25rem;
             margin-bottom: 0.5rem;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-
-        .raw-weather-nlp {
-            font-size: 0.85rem;
-            color: var(--gray-700);
-            font-style: italic;
         }
 
         .severity-badge {
@@ -477,8 +520,12 @@
                 grid-template-columns: 1fr;
             }
 
-            .raw-weather-buttons {
+            .weather-data-buttons {
                 flex-direction: column;
+            }
+
+            .pirep-details {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -652,7 +699,7 @@
 
             <!-- Timeline Visualization -->
             <section id="timeline-section" class="timeline-section">
-                <h2 style="margin-bottom: 1rem;">Flight Weather Timeline with AI Insights</h2>
+                <h2 style="margin-bottom: 1rem;">Flight Weather Timeline with Advanced AI & NLP Insights</h2>
                 
                 <!-- Chart Container -->
                 <div class="timeline-chart">
@@ -660,7 +707,7 @@
                 </div>
 
                 <!-- Detailed Timeline -->
-                <h3 style="margin-bottom: 1rem;">Detailed Weather Conditions with NLP Analysis & Raw Data</h3>
+                <h3 style="margin-bottom: 1rem;">Detailed Weather Conditions with Advanced Raw Data Analysis</h3>
                 <div id="timeline-details" class="timeline-details"></div>
             </section>
 
@@ -739,18 +786,20 @@
             errorMessage.style.display = 'none';
         }
 
-        // Toggle raw weather data panels
-        function toggleRawWeatherData(intervalIndex, dataType) {
-            const panelId = `raw-${dataType}-${intervalIndex}`;
+        // Toggle weather data panels
+        function toggleWeatherData(intervalIndex, dataType) {
+            const panelId = `weather-${dataType}-${intervalIndex}`;
             const panel = document.getElementById(panelId);
-            const button = document.querySelector(`[onclick="toggleRawWeatherData(${intervalIndex}, '${dataType}')"]`);
+            const button = document.querySelector(`[onclick="toggleWeatherData(${intervalIndex}, '${dataType}')"]`);
             
             if (panel.style.display === 'none' || !panel.style.display) {
                 panel.style.display = 'block';
-                button.textContent = `Hide ${dataType.toUpperCase()}`;
+                button.textContent = `Hide ${dataType.charAt(0).toUpperCase() + dataType.slice(1)}`;
+                button.className = 'btn btn-secondary';
             } else {
                 panel.style.display = 'none';
-                button.textContent = `Show ${dataType.toUpperCase()}`;
+                button.textContent = `Show ${dataType.charAt(0).toUpperCase() + dataType.slice(1)}`;
+                button.className = 'btn btn-info';
             }
         }
 
@@ -1085,7 +1134,7 @@
             // Create timeline chart
             createTimelineChart(timeline);
             
-            // Create detailed timeline items with raw weather data buttons
+            // Create detailed timeline items with enhanced weather data buttons
             timelineDetails.innerHTML = '';
             
             timeline.forEach((item, index) => {
@@ -1098,79 +1147,78 @@
                     nlpInsights += `<p><strong>NLP Summary:</strong> ${item.conditions.natural_language}</p>`;
                 }
                 
-                // Raw weather data buttons
-                const rawData = item.raw_data || {};
-                let rawWeatherButtons = '<div class="raw-weather-buttons">';
+                // Weather data buttons with enhanced formatting
+                let weatherButtons = '<div class="weather-data-buttons">';
                 
-                if (rawData.metars && rawData.metars.length > 0) {
-                    rawWeatherButtons += `<button class="btn btn-secondary" onclick="toggleRawWeatherData(${index}, 'metars')">Show METAR</button>`;
+                if (item.raw_metar && item.raw_metar.trim()) {
+                    weatherButtons += `<button class="btn btn-info" onclick="toggleWeatherData(${index}, 'metar')">Show METAR</button>`;
                 }
                 
-                if (rawData.pireps && rawData.pireps.length > 0) {
-                    rawWeatherButtons += `<button class="btn btn-secondary" onclick="toggleRawWeatherData(${index}, 'pireps')">Show PIREPs</button>`;
+                if (item.pirep_data && item.pirep_data.length > 0) {
+                    weatherButtons += `<button class="btn btn-info" onclick="toggleWeatherData(${index}, 'pireps')">Show PIREPs (${item.pirep_data.length})</button>`;
                 }
                 
-                if (rawData.tafs && rawData.tafs.length > 0) {
-                    rawWeatherButtons += `<button class="btn btn-secondary" onclick="toggleRawWeatherData(${index}, 'tafs')">Show TAF</button>`;
+                if (item.raw_taf && item.raw_taf.trim()) {
+                    weatherButtons += `<button class="btn btn-info" onclick="toggleWeatherData(${index}, 'taf')">Show TAF</button>`;
                 }
                 
-                rawWeatherButtons += '</div>';
+                weatherButtons += '</div>';
                 
-                // Raw weather panels
-                let rawWeatherPanels = '';
+                // Weather data panels with advanced formatting
+                let weatherPanels = '';
                 
                 // METAR panel
-                if (rawData.metars && rawData.metars.length > 0) {
-                    rawWeatherPanels += `<div id="raw-metars-${index}" class="raw-weather-panel">
-                        <h5>METAR Reports (${rawData.metars.length} stations)</h5>`;
-                    rawData.metars.forEach(metar => {
-                        rawWeatherPanels += `
-                            <div class="raw-weather-item">
-                                <div class="raw-weather-header">
-                                    <span class="raw-weather-station">${metar.station}</span>
-                                    <span class="raw-weather-distance">${metar.distance} NM</span>
-                                </div>
-                                <div class="raw-weather-text">${metar.raw}</div>
-                                <div class="raw-weather-nlp">${metar.nlp}</div>
-                            </div>`;
-                    });
-                    rawWeatherPanels += '</div>';
+                if (item.raw_metar && item.raw_metar.trim()) {
+                    weatherPanels += `<div id="weather-metar-${index}" class="weather-data-panel">
+                        <h5>🌤️ METAR Report</h5>
+                        <div class="weather-item">
+                            <div class="weather-item-header">
+                                <span class="weather-station">${item.conditions.nearest_station || 'Unknown Station'}</span>
+                                <span class="weather-distance">Nearest Station</span>
+                            </div>
+                            <div class="weather-raw">${item.raw_metar}</div>
+                            <div class="weather-nlp">${item.conditions.natural_language || 'Processing...'}</div>
+                        </div>
+                    </div>`;
                 }
                 
-                // PIREP panel
-                if (rawData.pireps && rawData.pireps.length > 0) {
-                    rawWeatherPanels += `<div id="raw-pireps-${index}" class="raw-weather-panel">
-                        <h5>Pilot Reports (${rawData.pireps.length} reports)</h5>`;
-                    rawData.pireps.forEach(pirep => {
-                        rawWeatherPanels += `
-                            <div class="raw-weather-item">
-                                <div class="raw-weather-header">
-                                    <span class="raw-weather-station">${pirep.station}</span>
-                                    <span class="raw-weather-distance">${pirep.distance} NM</span>
+                // PIREP panel with advanced NLP
+                if (item.pirep_data && item.pirep_data.length > 0) {
+                    weatherPanels += `<div id="weather-pireps-${index}" class="weather-data-panel">
+                        <h5>✈️ Pilot Reports (${item.pirep_data.length} reports)</h5>`;
+                    item.pirep_data.forEach(pirep => {
+                        weatherPanels += `
+                            <div class="weather-item">
+                                <div class="weather-item-header">
+                                    <span class="weather-station">${pirep.station}</span>
+                                    <span class="weather-distance">${pirep.distance} NM</span>
                                 </div>
-                                <div class="raw-weather-text">${pirep.raw}</div>
-                                <div class="raw-weather-nlp">${pirep.nlp}</div>
+                                <div class="weather-raw">${pirep.raw}</div>
+                                <div class="weather-nlp">${pirep.summary}</div>
+                                <div class="pirep-details">
+                                    ${pirep.altitude ? `<div class="pirep-detail"><strong>Alt:</strong> ${pirep.altitude} ft</div>` : ''}
+                                    ${pirep.turbulence ? `<div class="pirep-detail"><strong>Turb:</strong> ${pirep.turbulence}</div>` : ''}
+                                    ${pirep.icing ? `<div class="pirep-detail"><strong>Ice:</strong> ${pirep.icing}</div>` : ''}
+                                    ${pirep.aircraft ? `<div class="pirep-detail"><strong>A/C:</strong> ${pirep.aircraft}</div>` : ''}
+                                </div>
                             </div>`;
                     });
-                    rawWeatherPanels += '</div>';
+                    weatherPanels += '</div>';
                 }
                 
                 // TAF panel
-                if (rawData.tafs && rawData.tafs.length > 0) {
-                    rawWeatherPanels += `<div id="raw-tafs-${index}" class="raw-weather-panel">
-                        <h5>Terminal Forecasts (${rawData.tafs.length} airports)</h5>`;
-                    rawData.tafs.forEach(taf => {
-                        rawWeatherPanels += `
-                            <div class="raw-weather-item">
-                                <div class="raw-weather-header">
-                                    <span class="raw-weather-station">${taf.station}</span>
-                                    <span class="raw-weather-distance">${taf.distance} NM</span>
-                                </div>
-                                <div class="raw-weather-text">${taf.raw}</div>
-                                <div class="raw-weather-nlp">${taf.nlp}</div>
-                            </div>`;
-                    });
-                    rawWeatherPanels += '</div>';
+                if (item.raw_taf && item.raw_taf.trim()) {
+                    weatherPanels += `<div id="weather-taf-${index}" class="weather-data-panel">
+                        <h5>🔮 Terminal Forecast</h5>
+                        <div class="weather-item">
+                            <div class="weather-item-header">
+                                <span class="weather-station">${item.conditions.nearest_station || 'Unknown Station'}</span>
+                                <span class="weather-distance">Nearest Forecast</span>
+                            </div>
+                            <div class="weather-raw">${item.raw_taf}</div>
+                            <div class="weather-nlp">Advanced TAF analysis and forecast interpretation</div>
+                        </div>
+                    </div>`;
                 }
                 
                 timelineItem.innerHTML = `
@@ -1190,8 +1238,8 @@
                           `<p><strong>Pilot Reports:</strong> ${item.conditions.pirep_count} in area</p>` : ''}
                         ${item.conditions.nearest_station && item.conditions.nearest_station !== 'Unknown' ? 
                           `<p><strong>Nearest Station:</strong> ${item.conditions.nearest_station}</p>` : ''}
-                        ${rawWeatherButtons}
-                        ${rawWeatherPanels}
+                        ${weatherButtons}
+                        ${weatherPanels}
                     </div>
                 `;
                 
@@ -1287,7 +1335,7 @@
                         },
                         title: {
                             display: true,
-                            text: 'AI-Enhanced Weather & NOTAM Conditions Throughout Flight'
+                            text: 'Advanced AI-Enhanced Weather & NOTAM Conditions Throughout Flight'
                         },
                         tooltip: {
                             callbacks: {
