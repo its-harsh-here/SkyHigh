@@ -1003,17 +1003,6 @@
                 const timelineItem = document.createElement('div');
                 timelineItem.className = `timeline-item ${item.severity.toLowerCase()}`;
 
-                const buttonsHtml = `
-                    <div class="timeline-buttons">
-                        ${item.conditions.raw_metar ? 
-                            `<button class="btn btn-secondary btn-small" onclick="showRawDataModal('Raw METAR Data - ${item.conditions.nearest_station}', \`${item.conditions.raw_metar}\`)">Show Raw METAR</button>` : ''}
-                        ${item.conditions.raw_taf ? 
-                            `<button class="btn btn-secondary btn-small" onclick="showRawDataModal('Raw TAF Data - ${item.conditions.nearest_station}', \`${item.conditions.raw_taf}\`)">Show Raw TAF</button>` : ''}
-                        ${item.conditions.nearest_station ? 
-                            `<button class="btn btn-secondary btn-small" onclick="showPirepModal('${item.conditions.nearest_station}')">Pilot Reports</button>` : ''}
-                    </div>
-                `;
-
                 // Enhanced with NLP insights
                 let nlpInsights = '';
                 if (item.conditions.natural_language) {
@@ -1036,7 +1025,7 @@
                         ${item.conditions.pirep_count > 0 ?
                         `<p><strong>Pilot Reports:</strong> ${item.conditions.pirep_count} in area</p>` : ''}
                         ${item.conditions.nearest_station && item.conditions.nearest_station !== 'Unknown' ?
-                        `<p><strong>Nearest Station:</strong> ${item.conditions.nearest_station}</p>` : ''}
+                        `<p><strong>Nearest Airport:</strong> ${item.conditions.nearest_station}</p>` : ''}
                     </div>
                 `;
 
