@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Aviation Weather Briefing System</title>
+    <title>Enhanced Aviation Weather Briefing System with AI & NLP</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -72,7 +72,7 @@
             padding: 2rem 0;
         }
 
-        .flight-plan-section {
+        .flight-plan-section, .nlp-section {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
@@ -112,6 +112,11 @@
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
 
+        .nlp-textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
         .btn {
             padding: 0.75rem 1.5rem;
             border: none;
@@ -127,12 +132,23 @@
             color: white;
         }
 
-        .btn-primary:hover {
-            background: var(--primary-blue);
-            transform: translateY(-1px);
+        .btn-secondary {
+            background: var(--gray-600);
+            color: white;
         }
 
-        .timeline-section, .weather-summary, .route-overview, .notam-section {
+        .btn-success {
+            background: var(--success-green);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            opacity: 0.9;
+        }
+
+        .timeline-section, .weather-summary, .route-overview, .notam-section, 
+        .risk-assessment-section, .ml-predictions-section, .nlp-briefing-section {
             background: white;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
@@ -225,6 +241,21 @@
             color: #dc2626;
         }
 
+        .risk-high {
+            background: #fee2e2;
+            border-color: var(--danger-red);
+        }
+
+        .risk-moderate {
+            background: #fffbeb;
+            border-color: var(--warning-yellow);
+        }
+
+        .risk-low {
+            background: #f0f9ff;
+            border-color: var(--success-green);
+        }
+
         .summary-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -292,29 +323,6 @@
             color: var(--secondary-blue);
         }
 
-        .notam-classification {
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            background: var(--gray-200);
-            color: var(--gray-800);
-        }
-
-        .notam-text {
-            font-size: 0.9rem;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-        }
-
-        .notam-details {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 0.5rem;
-            font-size: 0.8rem;
-            color: var(--gray-600);
-        }
-
         .route-header {
             display: flex;
             justify-content: space-between;
@@ -369,6 +377,40 @@
             margin-bottom: 1rem;
         }
 
+        .tabs {
+            display: flex;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid var(--gray-200);
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .tab.active {
+            color: var(--secondary-blue);
+            border-bottom-color: var(--secondary-blue);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .prediction-item {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            border-left: 4px solid var(--secondary-blue);
+            background: var(--gray-50);
+        }
+
         @media (max-width: 768px) {
             .flight-plan-grid {
                 grid-template-columns: 1fr;
@@ -396,7 +438,7 @@
     <header class="header">
         <div class="container">
             <div class="header-content">
-                <h1>✈️ Enhanced Aviation Weather Briefing with NOTAMs</h1>
+                <h1>🤖 AI-Powered Aviation Weather Briefing with NLP & ML</h1>
                 <div class="utc-time">
                     UTC: <span id="utc-clock">--:--:--</span>
                 </div>
@@ -408,9 +450,15 @@
     <main class="main-content">
         <div class="container">
             
-            <!-- Flight Plan Input -->
-            <section class="flight-plan-section">
-                <h2 style="margin-bottom: 1rem;">🛩️ Comprehensive Flight Weather Analysis with NOTAMs</h2>
+            <!-- Input Method Tabs -->
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('manual')">Manual Input</div>
+                <div class="tab" onclick="switchTab('nlp')">Natural Language</div>
+            </div>
+
+            <!-- Manual Flight Plan Input -->
+            <section id="manual-tab" class="tab-content active flight-plan-section">
+                <h2 style="margin-bottom: 1rem;">🛩️ Manual Flight Planning</h2>
                 <div class="flight-plan-grid">
                     <div class="form-group">
                         <label for="departure">Departure Airport *</label>
@@ -425,7 +473,7 @@
                     <div class="form-group">
                         <label for="waypoints">Waypoints</label>
                         <input type="text" id="waypoints" class="form-control" 
-                               placeholder="e.g., KORD, KDEN (comma separated)" value="KORD, KDEN">
+                               placeholder="e.g., KORD, KDEN" value="KORD, KDEN">
                     </div>
                     <div class="form-group">
                         <label for="cruise-speed">Cruise Speed (knots)</label>
@@ -436,19 +484,45 @@
                         <label for="departure-time">Departure Time (UTC) *</label>
                         <input type="datetime-local" id="departure-time" class="form-control">
                         <small style="color: var(--gray-600); font-size: 0.8rem; margin-top: 0.25rem;">
-                            Select departure date and time (assumed UTC for aviation)
+                            Aviation weather data available: 15 days past to 4 hours future
                         </small>
                     </div>
                     <div class="form-group" style="display: flex; align-items: end;">
-                        <button id="analyze-btn" class="btn btn-primary">Analyze Weather & NOTAMs</button>
+                        <button id="analyze-btn" class="btn btn-primary">🚀 Analyze with AI & NLP</button>
                     </div>
+                </div>
+            </section>
+
+            <!-- Natural Language Input -->
+            <section id="nlp-tab" class="tab-content nlp-section">
+                <h2 style="margin-bottom: 1rem;">🗣️ Natural Language Flight Planning</h2>
+                <div class="form-group">
+                    <label for="nlp-input">Describe Your Flight Plan</label>
+                    <textarea id="nlp-input" class="form-control nlp-textarea" 
+                              placeholder="Example: 'I want to fly from JFK to LAX via Chicago O'Hare and Denver at 450 knots, departing tomorrow at 10 AM'"></textarea>
+                    <small style="color: var(--gray-600); font-size: 0.8rem; margin-top: 0.25rem;">
+                        Describe your flight plan in natural language. Include departure/destination airports, waypoints, speed, and departure time.
+                    </small>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <button id="process-nlp-btn" class="btn btn-secondary">🧠 Process with NLP</button>
+                    <button id="analyze-nlp-btn" class="btn btn-primary" style="margin-left: 1rem;" disabled>🚀 Analyze Flight Plan</button>
+                </div>
+                <div id="nlp-result" style="margin-top: 1rem; display: none;">
+                    <h3>Extracted Flight Plan:</h3>
+                    <div id="nlp-extracted-plan" style="background: var(--gray-50); padding: 1rem; border-radius: 0.5rem; margin-top: 0.5rem;"></div>
                 </div>
             </section>
 
             <!-- Loading/Error States -->
             <div id="loading" class="loading" style="display: none;">
-                <p>🔄 Analyzing comprehensive weather data and NOTAMs...</p>
-                <p style="font-size: 0.9rem; margin-top: 0.5rem;">Fetching METAR, TAF, PIREP, SIGMET, G-AIRMET, CWA, and NOTAM data...</p>
+                <p>🔄 Analyzing with AI, NLP & ML models...</p>
+                <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+                    • Fetching METAR, TAF, PIREP, SIGMET, G-AIRMET, CWA data<br>
+                    • Processing NOTAMs with NLP<br>
+                    • Running ML weather prediction models<br>
+                    • Generating risk assessment with AI
+                </p>
             </div>
             
             <div id="error-message" class="error" style="display: none;"></div>
@@ -457,7 +531,7 @@
             <!-- Route Overview -->
             <section id="route-overview" class="route-overview">
                 <div class="route-header">
-                    <h2>📊 Flight Route Overview</h2>
+                    <h2>📊 AI-Enhanced Flight Route Analysis</h2>
                     <div id="overall-severity" class="severity-badge"></div>
                 </div>
                 <div class="route-stats">
@@ -478,6 +552,35 @@
                         <div class="stat-label">Destination</div>
                     </div>
                 </div>
+            </section>
+
+            <!-- NLP Weather Briefing -->
+            <section id="nlp-briefing-section" class="nlp-briefing-section">
+                <h2 style="margin-bottom: 1rem;">🗣️ AI Weather Briefing Summary</h2>
+                <div id="nlp-briefing-content" style="font-size: 1.1rem; line-height: 1.8; padding: 1.5rem; background: var(--gray-50); border-radius: 0.5rem; border-left: 4px solid var(--secondary-blue);">
+                </div>
+            </section>
+
+            <!-- Risk Assessment -->
+            <section id="risk-assessment-section" class="risk-assessment-section">
+                <h2 style="margin-bottom: 1rem;">⚠️ AI Risk Assessment</h2>
+                <div id="risk-assessment-content">
+                    <div id="risk-level-display" class="risk-high" style="padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; border-left: 4px solid;">
+                        <h3 id="risk-level">--</h3>
+                        <p id="risk-percentage">--</p>
+                        <p id="risk-recommendation" style="margin-top: 0.5rem; font-style: italic;">--</p>
+                    </div>
+                    <div id="risk-factors">
+                        <h4>Risk Factors Identified:</h4>
+                        <ul id="risk-factors-list"></ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ML Weather Predictions -->
+            <section id="ml-predictions-section" class="ml-predictions-section">
+                <h2 style="margin-bottom: 1rem;">🧠 Machine Learning Weather Predictions</h2>
+                <div id="ml-predictions-content"></div>
             </section>
 
             <!-- Weather Data Summary -->
@@ -523,7 +626,7 @@
 
             <!-- Timeline Visualization -->
             <section id="timeline-section" class="timeline-section">
-                <h2 style="margin-bottom: 1rem;">⏰ Flight Weather Timeline</h2>
+                <h2 style="margin-bottom: 1rem;">⏰ Flight Weather Timeline with AI Insights</h2>
                 
                 <!-- Chart Container -->
                 <div class="timeline-chart">
@@ -531,7 +634,7 @@
                 </div>
 
                 <!-- Detailed Timeline -->
-                <h3 style="margin-bottom: 1rem;">Detailed Weather Conditions</h3>
+                <h3 style="margin-bottom: 1rem;">Detailed Weather Conditions with ML Predictions</h3>
                 <div id="timeline-details" class="timeline-details"></div>
             </section>
 
@@ -542,6 +645,7 @@
         // Application state
         let timelineChart = null;
         let currentFlightData = {};
+        let extractedFlightPlan = {};
 
         // DOM elements
         const utcClock = document.getElementById('utc-clock');
@@ -551,6 +655,9 @@
         const cruiseSpeedInput = document.getElementById('cruise-speed');
         const departureTimeInput = document.getElementById('departure-time');
         const analyzeBtn = document.getElementById('analyze-btn');
+        const nlpInput = document.getElementById('nlp-input');
+        const processNlpBtn = document.getElementById('process-nlp-btn');
+        const analyzeNlpBtn = document.getElementById('analyze-nlp-btn');
         const loading = document.getElementById('loading');
         const errorMessage = document.getElementById('error-message');
         const successMessage = document.getElementById('success-message');
@@ -562,6 +669,9 @@
         const timelineDetails = document.getElementById('timeline-details');
         const notamSection = document.getElementById('notam-section');
         const notamGrid = document.getElementById('notam-grid');
+        const nlpBriefingSection = document.getElementById('nlp-briefing-section');
+        const riskAssessmentSection = document.getElementById('risk-assessment-section');
+        const mlPredictionsSection = document.getElementById('ml-predictions-section');
 
         // Update UTC clock
         function updateClock() {
@@ -571,14 +681,92 @@
         setInterval(updateClock, 1000);
         updateClock();
 
-        // Set default departure time to 2 hours ago (to ensure it's in the past)
+        // Set default departure time to 2 hours ago
         function setDefaultDepartureTime() {
             const now = new Date();
-            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 hours ago
+            const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
             const utcTime = new Date(twoHoursAgo.getTime() - twoHoursAgo.getTimezoneOffset() * 60000);
             departureTimeInput.value = utcTime.toISOString().slice(0, 16);
         }
         setDefaultDepartureTime();
+
+        // Tab switching functionality
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Add active class to selected tab
+            event.target.classList.add('active');
+        }
+
+        // Process natural language input
+        async function processNaturalLanguage() {
+            const text = nlpInput.value.trim();
+            
+            if (!text) {
+                showError('Please enter a flight plan description');
+                return;
+            }
+            
+            showLoading();
+            
+            try {
+                const response = await fetch('/api/process-natural-language', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ text: text })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                extractedFlightPlan = data.flight_plan;
+                
+                // Display extracted flight plan
+                displayExtractedFlightPlan(extractedFlightPlan);
+                
+                // Enable analyze button
+                analyzeNlpBtn.disabled = false;
+                
+                hideLoading();
+                showSuccess('Flight plan extracted successfully from natural language');
+                
+            } catch (error) {
+                console.error('Error processing natural language:', error);
+                showError(`Failed to process natural language: ${error.message}`);
+            }
+        }
+
+        function displayExtractedFlightPlan(flightPlan) {
+            const resultDiv = document.getElementById('nlp-result');
+            const planDiv = document.getElementById('nlp-extracted-plan');
+            
+            let planHtml = '<ul>';
+            planHtml += `<li><strong>Departure:</strong> ${flightPlan.departure || 'Not specified'}</li>`;
+            planHtml += `<li><strong>Destination:</strong> ${flightPlan.destination || 'Not specified'}</li>`;
+            planHtml += `<li><strong>Waypoints:</strong> ${flightPlan.waypoints.length > 0 ? flightPlan.waypoints.join(', ') : 'None'}</li>`;
+            planHtml += `<li><strong>Cruise Speed:</strong> ${flightPlan.cruise_speed} knots</li>`;
+            planHtml += `<li><strong>Departure Time:</strong> ${flightPlan.departure_time || 'Current time'}</li>`;
+            planHtml += '</ul>';
+            
+            planDiv.innerHTML = planHtml;
+            resultDiv.style.display = 'block';
+        }
 
         // Show/hide UI states
         function showLoading() {
@@ -605,25 +793,35 @@
             errorMessage.style.display = 'none';
         }
 
-        // Analyze comprehensive weather timeline
-        async function analyzeWeatherTimeline() {
-            const departure = departureInput.value.trim().toUpperCase();
-            const destination = destinationInput.value.trim().toUpperCase();
-            const waypoints = waypointsInput.value.trim().split(',').map(w => w.trim().toUpperCase()).filter(w => w);
-            const cruiseSpeed = parseInt(cruiseSpeedInput.value) || 450;
-            const departureTime = departureTimeInput.value; // Get the raw datetime-local value
+        // Analyze weather timeline with AI & NLP
+        async function analyzeWeatherTimeline(useNlpData = false) {
+            let departure, destination, waypoints, cruiseSpeed, departureTime;
+            
+            if (useNlpData && extractedFlightPlan) {
+                departure = extractedFlightPlan.departure;
+                destination = extractedFlightPlan.destination;
+                waypoints = extractedFlightPlan.waypoints || [];
+                cruiseSpeed = extractedFlightPlan.cruise_speed || 450;
+                departureTime = extractedFlightPlan.departure_time;
+            } else {
+                departure = departureInput.value.trim().toUpperCase();
+                destination = destinationInput.value.trim().toUpperCase();
+                waypoints = waypointsInput.value.trim().split(',').map(w => w.trim().toUpperCase()).filter(w => w);
+                cruiseSpeed = parseInt(cruiseSpeedInput.value) || 450;
+                departureTime = departureTimeInput.value;
+            }
             
             if (!departure || !destination) {
-                showError('Please enter both departure and destination airports');
+                showError('Please specify both departure and destination airports');
                 return;
             }
 
-            if (!departureTime) {
+            if (!departureTime && !useNlpData) {
                 showError('Please select a departure date and time');
                 return;
             }
             
-            console.log('Sending departure_time:', departureTime); // Debug log
+            console.log('Sending request:', { departure, destination, waypoints, cruiseSpeed, departureTime });
             
             showLoading();
             
@@ -638,7 +836,7 @@
                         destination,
                         waypoints,
                         cruise_speed: cruiseSpeed,
-                        departure_time: departureTime  // Send the datetime-local value directly
+                        departure_time: departureTime
                     })
                 });
                 
@@ -656,12 +854,82 @@
                 displayNOTAMs(data.notams || []);
                 displayTimeline(data.timeline);
                 
-                showSuccess(`Analysis completed: ${data.timeline.length} time intervals, ${data.notams?.length || 0} NOTAMs`);
+                // Display new AI/NLP features
+                displayNLPBriefing(data.nlp_briefing_summary);
+                displayRiskAssessment(data.risk_assessment);
+                displayMLPredictions(data.weather_predictions);
+                
+                showSuccess(`AI Analysis completed: ${data.timeline.length} intervals, ${data.notams?.length || 0} NOTAMs, ML predictions included`);
                 
             } catch (error) {
                 console.error('Error analyzing weather timeline:', error);
                 showError(`Failed to analyze weather timeline: ${error.message}`);
             }
+        }
+
+        function displayNLPBriefing(briefing) {
+            if (!briefing) return;
+            
+            const briefingContent = document.getElementById('nlp-briefing-content');
+            briefingContent.textContent = briefing;
+            nlpBriefingSection.style.display = 'block';
+        }
+
+        function displayRiskAssessment(riskData) {
+            if (!riskData) return;
+            
+            const riskLevelDisplay = document.getElementById('risk-level-display');
+            const riskLevel = document.getElementById('risk-level');
+            const riskPercentage = document.getElementById('risk-percentage');
+            const riskRecommendation = document.getElementById('risk-recommendation');
+            const riskFactorsList = document.getElementById('risk-factors-list');
+            
+            // Set risk level styling
+            riskLevelDisplay.className = `risk-${riskData.risk_level.toLowerCase().replace(' ', '-').replace('risk', '')}`;
+            
+            riskLevel.textContent = riskData.risk_level;
+            riskPercentage.textContent = `Risk Score: ${riskData.risk_percentage}%`;
+            riskRecommendation.textContent = riskData.recommendation;
+            
+            // Display risk factors
+            riskFactorsList.innerHTML = '';
+            if (riskData.risk_factors && riskData.risk_factors.length > 0) {
+                riskData.risk_factors.forEach(factor => {
+                    const li = document.createElement('li');
+                    li.textContent = factor;
+                    riskFactorsList.appendChild(li);
+                });
+            } else {
+                const li = document.createElement('li');
+                li.textContent = 'No specific risk factors identified';
+                riskFactorsList.appendChild(li);
+            }
+            
+            riskAssessmentSection.style.display = 'block';
+        }
+
+        function displayMLPredictions(predictions) {
+            if (!predictions || predictions.length === 0) return;
+            
+            const predictionsContent = document.getElementById('ml-predictions-content');
+            predictionsContent.innerHTML = '';
+            
+            predictions.forEach(prediction => {
+                const predictionDiv = document.createElement('div');
+                predictionDiv.className = 'prediction-item';
+                
+                const timestamp = new Date(prediction.timestamp).toLocaleString();
+                
+                predictionDiv.innerHTML = `
+                    <h4>+${prediction.hour} Hour${prediction.hour > 1 ? 's' : ''} (${timestamp})</h4>
+                    <p><strong>Predicted Conditions:</strong> ${prediction.predicted_severity}</p>
+                    <p><strong>ML Model Confidence:</strong> ${prediction.confidence}%</p>
+                `;
+                
+                predictionsContent.appendChild(predictionDiv);
+            });
+            
+            mlPredictionsSection.style.display = 'block';
         }
 
         function displayRouteOverview(route) {
@@ -734,6 +1002,17 @@
                 const timelineItem = document.createElement('div');
                 timelineItem.className = `timeline-item ${item.severity.toLowerCase()}`;
                 
+                // Enhanced with AI predictions
+                let aiInsights = '';
+                if (item.conditions.turbulence_forecast) {
+                    const turb = item.conditions.turbulence_forecast;
+                    aiInsights += `<p><strong>🧠 ML Turbulence Prediction:</strong> ${turb.turbulence_level} (${turb.probability}% probability)</p>`;
+                }
+                
+                if (item.conditions.natural_language) {
+                    aiInsights += `<p><strong>🗣️ NLP Summary:</strong> ${item.conditions.natural_language}</p>`;
+                }
+                
                 timelineItem.innerHTML = `
                     <div class="timeline-time">
                         ${item.start_time_local} - ${item.end_time_local}
@@ -744,6 +1023,7 @@
                     <div class="timeline-conditions">
                         <h4>${item.conditions.condition} <span class="severity-badge severity-${item.severity.toLowerCase()}">${item.severity}</span></h4>
                         <p>${item.conditions.description}</p>
+                        ${aiInsights}
                         ${item.conditions.hazards && item.conditions.hazards.length > 0 ? 
                           `<p><strong>⚠️ Advisories:</strong> ${item.conditions.hazards.join(', ')}</p>` : ''}
                         ${item.conditions.pirep_count > 0 ? 
@@ -845,7 +1125,7 @@
                         },
                         title: {
                             display: true,
-                            text: 'Weather & NOTAM Conditions Throughout Flight'
+                            text: 'AI-Enhanced Weather & NOTAM Conditions Throughout Flight'
                         },
                         tooltip: {
                             callbacks: {
@@ -857,11 +1137,17 @@
                                 label: function(context) {
                                     const index = context.dataIndex;
                                     const item = timeline[index];
-                                    return [
+                                    let labels = [
                                         `Severity: ${item.severity}`,
                                         `Condition: ${item.conditions.condition}`,
                                         `Location: ${item.location_description}`
                                     ];
+                                    
+                                    if (item.conditions.turbulence_forecast) {
+                                        labels.push(`Turbulence: ${item.conditions.turbulence_forecast.turbulence_level}`);
+                                    }
+                                    
+                                    return labels;
                                 }
                             }
                         }
@@ -877,13 +1163,19 @@
         }
 
         // Event listeners
-        analyzeBtn.addEventListener('click', analyzeWeatherTimeline);
+        analyzeBtn.addEventListener('click', () => analyzeWeatherTimeline(false));
+        processNlpBtn.addEventListener('click', processNaturalLanguage);
+        analyzeNlpBtn.addEventListener('click', () => analyzeWeatherTimeline(true));
 
         // Allow Enter key in inputs
         [departureInput, destinationInput, waypointsInput, cruiseSpeedInput].forEach(input => {
             input.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') analyzeBtn.click();
             });
+        });
+
+        nlpInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) processNlpBtn.click();
         });
     </script>
 </body>
