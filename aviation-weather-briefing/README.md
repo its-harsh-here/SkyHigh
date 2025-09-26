@@ -6,15 +6,17 @@ A comprehensive solution that simplifies, automates, and optimizes the process o
 
 ### 🧠 **AI-Powered Weather Analysis**
 - **Intelligent Executive Summaries**: 2-3 line concise summaries prioritizing critical weather factors
-- **NLP-Based Pilot Recommendations**: Smart action items based on weather conditions and flight phases
+- **NLP-Based Pilot Recommendations**: Smart action items with emoji indicators for quick recognition
 - **Risk Assessment**: Automated risk categorization (Minimal/Low/Moderate/High)
-- **Decision Factor Analysis**: Key factors extracted for pilot decision-making
+- **Decision Factor Analysis**: Key weather elements extracted for pilot decision-making
+- **Time-Aware Analysis**: Considers planned departure time for relevant weather forecasting
 
 ### 🌦️ **Comprehensive Weather Data**
 - **Live Weather Integration**: Real-time METAR, TAF, PIREPs, and SIGMET data from aviationweather.gov
+- **Airport Validation**: Live API validation of ICAO airport codes from global database
 - **Flight Plan Analysis**: Automatically extracts weather data along flight routes
 - **Weather Categorization**: Conditions categorized as Clear, Significant, or Severe
-- **Phase-Specific Guidance**: Pre-flight, departure, en route, and arrival recommendations
+- **Individual Reports**: Complete METAR, TAF, and PIREP data display for any airport
 
 ### 📊 **Interactive Visualizations**
 - **Wind Analysis Charts**: Wind speed and direction graphs along route
@@ -24,9 +26,10 @@ A comprehensive solution that simplifies, automates, and optimizes the process o
 
 ### ✈️ **Pilot-Centric Interface**
 - **Individual Report Requests**: Get specific reports (METAR, TAF, PIREP) for any airport
-- **Flight Route Input**: Manual entry or flight plan upload support
+- **Flight Route Input**: Manual entry with departure time selection or flight plan upload
+- **Airport Code Validation**: Real-time validation of ICAO codes with error feedback
 - **Mobile-Friendly Design**: Optimized for use during pre-flight and in-flight operations
-- **Priority-Based Display**: Most critical information presented first
+- **Priority-Based Display**: Most critical information presented first with clean, focused layout
 
 ## Installation
 

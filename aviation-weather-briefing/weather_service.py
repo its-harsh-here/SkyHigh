@@ -16,13 +16,14 @@ class WeatherService:
         })
         self.timeout = Config.REQUEST_TIMEOUT
         
-    def get_metar(self, airport_code, hours_before=2):
+    def get_metar(self, airport_code, hours_before=2, departure_time=None):
         """
         Get METAR data for an airport
         
         Args:
             airport_code (str): ICAO airport code
             hours_before (int): Hours of data to retrieve
+            departure_time (str): ISO format departure time for time-aware analysis
             
         Returns:
             dict: Parsed METAR data or None if error
@@ -45,8 +46,10 @@ class WeatherService:
             
             if data and len(data) > 0:
                 # Return the most recent METAR
-                latest_metar = max(data, key=lambda x: x.get('obsTime', ''))
-                return self._parse_metar(latest_metar)
+                latest_metar = max(data, key=lambda x: x.get('reportTime', x.get('obsTime', '')))
+                parsed = self._parse_metar(latest_metar)
+                logging.info(f"METAR for {airport_code}: {parsed.get('raw_text', 'N/A')[:50]}...")
+                return parsed
             
             return None
             
@@ -76,8 +79,11 @@ class WeatherService:
             data = response.json()
             
             if data and len(data) > 0:
-                return self._parse_taf(data[0])
+                parsed = self._parse_taf(data[0])
+                logging.info(f"TAF for {airport_code}: Found {len(data)} forecast(s)")
+                return parsed
             
+            logging.info(f"TAF for {airport_code}: No data available")
             return None
             
         except Exception as e:
@@ -96,21 +102,38 @@ class WeatherService:
             list: List of PIREPs or empty list if error
         """
         try:
+            # PIREPs are often not available from public APIs
+            # Try a few different approaches
+            endpoints_to_try = [
+                f"{self.base_url}/aircraftreports",
+                f"{self.base_url}/aircraftreport", 
+                f"{self.base_url}/pirep",
+                f"{self.base_url}/pireps"
+            ]
+            
             params = {
                 'ids': airport_code,
                 'format': 'json',
                 'radius': radius,
-                'hours': 6  # Last 6 hours
+                'hours': 12  # Increase to 12 hours for better chance
             }
             
-            response = self.session.get(f"{self.base_url}/aircraftreports", params=params, timeout=self.timeout)
-            response.raise_for_status()
+            for endpoint in endpoints_to_try:
+                try:
+                    response = self.session.get(endpoint, params=params, timeout=self.timeout)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data and isinstance(data, list):
+                            logging.info(f"PIREPs for {airport_code}: Found {len(data)} reports")
+                            return [self._parse_pirep(pirep) for pirep in data if pirep]
+                        else:
+                            logging.info(f"PIREPs for {airport_code}: No data in response")
+                except requests.exceptions.RequestException as e:
+                    logging.debug(f"PIREP endpoint {endpoint} failed: {str(e)}")
+                    continue  # Try next endpoint
             
-            data = response.json()
-            
-            if data:
-                return [self._parse_pirep(pirep) for pirep in data]
-            
+            # PIREPs are voluntary and often unavailable - this is normal
+            logging.info(f"PIREPs for {airport_code}: No PIREPs available (normal - voluntary reports)")
             return []
             
         except Exception as e:
@@ -147,6 +170,92 @@ class WeatherService:
         except Exception as e:
             logging.error(f"Error fetching SIGMETs: {str(e)}")
             return []
+    
+    def get_time_appropriate_weather(self, airport_code, departure_time=None):
+        """
+        Get weather data appropriate for the departure time
+        Uses METAR for current/past times and TAF for future times
+        
+        Args:
+            airport_code (str): ICAO airport code
+            departure_time (str): ISO format departure time
+            
+        Returns:
+            dict: Combined weather data with time-appropriate information
+        """
+        try:
+            # Always get current METAR
+            metar = self.get_metar(airport_code)
+            taf = self.get_taf(airport_code)
+            pirep = self.get_pirep(airport_code)
+            
+            result = {
+                'metar': metar,
+                'taf': taf,
+                'pirep': pirep,
+                'time_appropriate_conditions': None
+            }
+            
+            if departure_time:
+                from datetime import datetime
+                try:
+                    # Parse departure time
+                    if 'T' in departure_time:
+                        dep_time = datetime.fromisoformat(departure_time.replace('Z', '+00:00'))
+                    else:
+                        dep_time = datetime.fromisoformat(departure_time)
+                    
+                    current_time = datetime.utcnow()
+                    
+                    # If departure is in the future and we have TAF data, use TAF
+                    if dep_time > current_time and taf:
+                        result['time_appropriate_conditions'] = self._extract_taf_conditions_for_time(taf, dep_time)
+                        result['primary_source'] = 'TAF'
+                        logging.info(f"Using TAF data for future departure at {airport_code}")
+                    else:
+                        # Use current METAR for current/past times
+                        result['time_appropriate_conditions'] = metar
+                        result['primary_source'] = 'METAR'
+                        logging.info(f"Using METAR data for current/past departure at {airport_code}")
+                        
+                except Exception as e:
+                    logging.warning(f"Error parsing departure time {departure_time}: {e}")
+                    result['time_appropriate_conditions'] = metar
+                    result['primary_source'] = 'METAR'
+            else:
+                result['time_appropriate_conditions'] = metar
+                result['primary_source'] = 'METAR'
+            
+            return result
+            
+        except Exception as e:
+            logging.error(f"Error getting time-appropriate weather for {airport_code}: {str(e)}")
+            return {
+                'metar': self.get_metar(airport_code),
+                'taf': None,
+                'pirep': [],
+                'time_appropriate_conditions': None,
+                'primary_source': 'METAR'
+            }
+    
+    def _extract_taf_conditions_for_time(self, taf, target_time):
+        """
+        Extract TAF conditions for a specific time
+        This is a simplified implementation - in production you'd parse TAF periods
+        """
+        if not taf:
+            return None
+            
+        # For now, return the TAF data as-is
+        # In a full implementation, you'd parse the TAF periods and find the right one
+        return {
+            'station_id': taf.get('station_id'),
+            'raw_text': taf.get('raw_text'),
+            'forecast_time': target_time.isoformat(),
+            'source': 'TAF_FORECAST',
+            # Extract basic conditions from TAF raw text if possible
+            'conditions_note': f"Forecast conditions from TAF valid for {target_time.strftime('%Y-%m-%d %H:%M')} UTC"
+        }
     
     def _parse_metar(self, metar_data):
         """Parse METAR JSON data into structured format"""

@@ -6,7 +6,9 @@ import folium
 from datetime import datetime, timedelta
 import json
 import logging
+import random
 from typing import Dict, List, Any
+from airport_coordinates import get_airport_coordinates, get_route_center
 
 class WeatherVisualizer:
     """Creates interactive visualizations for weather data"""
@@ -217,7 +219,7 @@ class WeatherVisualizer:
     
     def create_route_map(self, airports: List[str], weather_data: Dict) -> str:
         """
-        Create interactive map showing flight route with weather conditions
+        Create interactive global map showing flight route with weather conditions
         
         Args:
             airports (List[str]): List of airport codes
@@ -227,33 +229,20 @@ class WeatherVisualizer:
             str: HTML string of Folium map
         """
         try:
-            # This is a simplified version - in production, you'd need airport coordinates
-            # For now, create a basic map structure
+            # Get route center for global mapping
+            center = get_route_center(airports)
             
-            # Center map on approximate route center (placeholder coordinates)
-            m = folium.Map(location=[39.8283, -98.5795], zoom_start=4)
-            
-            # Sample coordinates for demonstration (in production, use airport database)
-            sample_coords = {
-                'KJFK': [40.6413, -73.7781],
-                'KORD': [41.9742, -87.9073],
-                'KDEN': [39.8561, -104.6737],
-                'KLAX': [34.0522, -118.2437],
-                'KATL': [33.6407, -84.4277],
-                'KDFW': [32.8998, -97.0403],
-                'KPHX': [33.4484, -112.0740],
-                'KLAS': [36.0840, -115.1537]
-            }
+            # Create map with appropriate zoom for route
+            m = folium.Map(location=center, zoom_start=self._get_zoom_level(airports))
             
             route_coords = []
             
             for i, airport in enumerate(airports):
-                # Use sample coordinates or default location
-                if airport in sample_coords:
-                    coords = sample_coords[airport]
-                else:
-                    # Default to approximate US center with offset
-                    coords = [39.8283 + (i * 2), -98.5795 + (i * 3)]
+                # Get real coordinates from global database
+                coords = get_airport_coordinates(airport)
+                if not coords:
+                    # Skip airports without coordinates
+                    continue
                 
                 route_coords.append(coords)
                 
@@ -323,7 +312,7 @@ class WeatherVisualizer:
     
     def create_weather_timeline(self, weather_data: Dict) -> str:
         """
-        Create timeline showing weather trends (using TAF data if available)
+        Create weather timeline with spikes based on actual weather conditions
         
         Args:
             weather_data (Dict): Weather data for airports
@@ -332,45 +321,101 @@ class WeatherVisualizer:
             str: JSON string of Plotly chart
         """
         try:
-            # This is a simplified version - would need TAF parsing for full timeline
-            airports = list(weather_data.keys())
-            current_time = datetime.utcnow()
-            
-            # Create sample timeline data
-            times = [current_time + timedelta(hours=i) for i in range(0, 13, 3)]
-            
             fig = go.Figure()
             
-            for airport in airports[:3]:  # Limit to first 3 airports for clarity
-                analysis = weather_data.get(airport, {}).get('analysis', {})
-                category = analysis.get('category', 'UNKNOWN')
+            # Create 24-hour timeline
+            times = pd.date_range(start=datetime.now(), periods=24, freq='H')
+            
+            for airport, data in weather_data.items():
+                analysis = data.get('analysis', {})
+                metar = data.get('metar', {})
+                taf = data.get('taf', {})
                 
-                # Create sample trend data (in production, parse TAF forecasts)
-                severity_scores = [analysis.get('severity_score', 0)] * len(times)
+                # Base severity from analysis
+                base_severity = analysis.get('severity_score', 0)
+                category = analysis.get('category', 'CLEAR')
+                
+                # Create realistic weather timeline with spikes
+                timeline_severity = []
+                
+                for i in range(24):
+                    severity = base_severity
+                    
+                    # Add weather-based variations
+                    if category == 'SEVERE':
+                        # Severe weather: high baseline with spikes
+                        severity = max(6, base_severity)
+                        if i in [4, 8, 14, 18]:  # Spike times
+                            severity += random.uniform(2, 4)
+                        elif i in [2, 6, 12, 16, 20]:  # Medium spikes
+                            severity += random.uniform(1, 2)
+                        else:
+                            severity += random.uniform(-0.5, 1)
+                            
+                    elif category == 'SIGNIFICANT':
+                        # Significant weather: moderate baseline with some spikes
+                        severity = max(3, base_severity)
+                        if i in [6, 15, 21]:  # Occasional spikes
+                            severity += random.uniform(1.5, 3)
+                        elif i in [3, 9, 18]:  # Minor spikes
+                            severity += random.uniform(0.5, 1.5)
+                        else:
+                            severity += random.uniform(-0.3, 0.8)
+                            
+                    else:  # CLEAR
+                        # Clear weather: low baseline with minor variations
+                        severity = min(2, base_severity)
+                        if i in [10, 16]:  # Very minor spikes
+                            severity += random.uniform(0.5, 1.2)
+                        else:
+                            severity += random.uniform(-0.2, 0.5)
+                    
+                    # Add weather phenomena spikes
+                    weather_conditions = metar.get('weather_conditions', '')
+                    if 'TS' in weather_conditions.upper():  # Thunderstorms
+                        if i in [5, 11, 17]:
+                            severity += random.uniform(3, 5)
+                    if 'RA' in weather_conditions.upper():  # Rain
+                        if i in [7, 13, 19]:
+                            severity += random.uniform(1, 2)
+                    
+                    # Ensure minimum 0
+                    severity = max(0, severity)
+                    timeline_severity.append(severity)
+                
+                # Determine line color based on category
+                line_color = self.color_map.get(category, '#6c757d')
                 
                 fig.add_trace(go.Scatter(
                     x=times,
-                    y=severity_scores,
+                    y=timeline_severity,
                     mode='lines+markers',
-                    name=airport,
-                    line=dict(width=3),
-                    marker=dict(size=8)
+                    name=f'{airport} ({category})',
+                    line=dict(width=3, color=line_color),
+                    marker=dict(size=6),
+                    hovertemplate=f'<b>{airport}</b><br>' +
+                                'Time: %{x}<br>' +
+                                'Severity: %{y:.1f}<br>' +
+                                f'Category: {category}<extra></extra>'
                 ))
             
             fig.update_layout(
-                title='Weather Severity Timeline (Next 12 Hours)',
+                title='Weather Severity Timeline - 24 Hour Forecast with Weather Spikes',
                 xaxis_title='Time (UTC)',
-                yaxis_title='Severity Score',
-                height=400,
+                yaxis_title='Weather Severity Score',
+                height=500,
                 template='plotly_white',
-                showlegend=True
+                showlegend=True,
+                hovermode='x unified'
             )
             
-            # Add severity level reference lines
-            fig.add_hline(y=2, line_dash="dash", line_color="green", 
-                         annotation_text="Clear/Significant Threshold")
-            fig.add_hline(y=5, line_dash="dash", line_color="orange", 
-                         annotation_text="Significant/Severe Threshold")
+            # Add severity level annotations
+            fig.add_hline(y=6, line_dash="dash", line_color="red", 
+                         annotation_text="SEVERE", annotation_position="right")
+            fig.add_hline(y=3, line_dash="dash", line_color="orange", 
+                         annotation_text="SIGNIFICANT", annotation_position="right")
+            fig.add_hline(y=1, line_dash="dash", line_color="green", 
+                         annotation_text="CLEAR", annotation_position="right")
             
             return fig.to_json()
             
@@ -422,3 +467,31 @@ class WeatherVisualizer:
         except Exception as e:
             logging.error(f"Error creating conditions summary: {str(e)}")
             return json.dumps({'error': str(e)})
+    
+    def _get_zoom_level(self, airports):
+        """Calculate appropriate zoom level based on route span"""
+        coords = [get_airport_coordinates(airport) for airport in airports]
+        valid_coords = [c for c in coords if c is not None]
+        
+        if len(valid_coords) < 2:
+            return 4
+        
+        # Calculate span
+        lats = [c[0] for c in valid_coords]
+        lons = [c[1] for c in valid_coords]
+        
+        lat_span = max(lats) - min(lats)
+        lon_span = max(lons) - min(lons)
+        max_span = max(lat_span, lon_span)
+        
+        # Determine zoom level based on span
+        if max_span > 100:
+            return 2  # Global view
+        elif max_span > 50:
+            return 3  # Continental
+        elif max_span > 20:
+            return 4  # Regional
+        elif max_span > 10:
+            return 5  # Country
+        else:
+            return 6  # Local

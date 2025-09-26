@@ -68,13 +68,9 @@ class AviationNLPAnalyzer:
                 conditions_analysis, airports, briefing
             )
             
-            # Generate phase-specific guidance
-            phase_guidance = self._generate_phase_guidance(conditions_analysis, airports)
-            
             return {
                 'executive_summary': summary,
                 'pilot_recommendations': recommendations,
-                'phase_guidance': phase_guidance,
                 'risk_assessment': self._assess_flight_risk(conditions_analysis),
                 'decision_factors': self._extract_decision_factors(conditions_analysis)
             }
@@ -84,7 +80,6 @@ class AviationNLPAnalyzer:
             return {
                 'executive_summary': "Weather analysis unavailable due to processing error.",
                 'pilot_recommendations': ["Contact flight operations for manual weather briefing."],
-                'phase_guidance': {},
                 'risk_assessment': 'UNKNOWN',
                 'decision_factors': []
             }
@@ -334,64 +329,7 @@ class AviationNLPAnalyzer:
         
         return recommendations[:8]  # Limit to most important recommendations
     
-    def _generate_phase_guidance(self, analysis: Dict, airports: List[str]) -> Dict:
-        """Generate phase-specific flight guidance"""
-        guidance = {
-            'pre_flight': [],
-            'departure': [],
-            'enroute': [],
-            'arrival': []
-        }
-        
-        # Pre-flight guidance
-        if analysis['critical_conditions']:
-            guidance['pre_flight'].append("Complete thorough weather briefing with flight operations")
-            guidance['pre_flight'].append("Review emergency procedures and alternate airports")
-        
-        guidance['pre_flight'].append("Verify aircraft equipment operational for expected conditions")
-        guidance['pre_flight'].append("Calculate performance data for current weather conditions")
-        
-        # Departure guidance
-        departure_airport = airports[0] if airports else None
-        if departure_airport:
-            dep_conditions = next((c for c in analysis['critical_conditions'] 
-                                 if c['airport'] == departure_airport), None)
-            if dep_conditions:
-                hazard = dep_conditions['condition']
-                if hazard['type'] == 'strong_winds':
-                    guidance['departure'].append("Use maximum performance takeoff technique")
-                    guidance['departure'].append("Be prepared for wind shear during initial climb")
-                elif hazard['type'] == 'low_visibility':
-                    guidance['departure'].append("Use instrument departure procedures")
-                    guidance['departure'].append("Maintain precise heading and altitude control")
-        
-        # Enroute guidance
-        if len(analysis['moderate_conditions']) > 2:
-            guidance['enroute'].append("Monitor weather radar and pilot reports continuously")
-            guidance['enroute'].append("Be prepared to deviate around weather systems")
-        
-        if analysis['dominant_hazards']:
-            primary_hazard = analysis['dominant_hazards'][0][0]
-            if primary_hazard == 'turbulence':
-                guidance['enroute'].append("Maintain turbulence penetration speed when encountering rough air")
-            elif primary_hazard == 'icing':
-                guidance['enroute'].append("Request altitude changes to avoid icing layers")
-        
-        # Arrival guidance
-        arrival_airport = airports[-1] if airports else None
-        if arrival_airport:
-            arr_conditions = next((c for c in analysis['critical_conditions'] 
-                                 if c['airport'] == arrival_airport), None)
-            if arr_conditions:
-                hazard = arr_conditions['condition']
-                if hazard['type'] == 'low_ceiling':
-                    guidance['arrival'].append("Brief instrument approach procedures and minimums")
-                    guidance['arrival'].append("Ensure adequate fuel for missed approach and alternate")
-                elif hazard['type'] == 'strong_winds':
-                    guidance['arrival'].append("Request runway with most favorable wind component")
-                    guidance['arrival'].append("Be prepared for go-around if approach becomes unstable")
-        
-        return guidance
+    # Phase guidance generation removed as requested
     
     def _assess_flight_risk(self, analysis: Dict) -> str:
         """Assess overall flight risk level"""

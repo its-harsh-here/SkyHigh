@@ -42,9 +42,10 @@ function setupInputValidation() {
 function handleManualSubmit(event) {
     event.preventDefault();
     
-    const departure = document.getElementById('departure').value.trim();
-    const arrival = document.getElementById('arrival').value.trim();
+    const departure = document.getElementById('departure').value.trim().toUpperCase();
+    const arrival = document.getElementById('arrival').value.trim().toUpperCase();
     const waypoints = document.getElementById('waypoints').value.trim();
+    const departureTime = document.getElementById('departureTime').value;
     
     if (!validateICAOCode(departure) || !validateICAOCode(arrival)) {
         showError('Please enter valid 4-letter ICAO airport codes');
@@ -64,7 +65,8 @@ function handleManualSubmit(event) {
     analyzeRoute({
         departure: departure,
         arrival: arrival,
-        waypoints: waypointList
+        waypoints: waypointList,
+        departure_time: departureTime
     });
 }
 
@@ -131,7 +133,7 @@ function analyzeRoute(routeData) {
         hideLoading();
         
         if (data.error) {
-            showError(data.error);
+            showErrorMessage(data.error);
             return;
         }
         
@@ -162,19 +164,17 @@ function getIndividualWeather(airportCode, reportTypes) {
         })
     })
     .then(response => response.json())
-    .then(data => {
-        hideLoading();
-        
-        if (data.error) {
-            showError(data.error);
-            return;
-        }
-        
-        displayIndividualResults(data, airportCode);
-    })
+        .then(data => {
+            hideLoading();
+            if (data.error) {
+                showErrorMessage(data.error);
+                return;
+            }
+            displayIndividualResults(data, airportCode);
+        })
     .catch(error => {
         hideLoading();
-        showError('Failed to fetch weather data: ' + error.message);
+        showErrorMessage('Failed to fetch weather data: ' + error.message);
     });
 }
 
@@ -191,15 +191,7 @@ function displayBriefingResults(data) {
         displayNLPAnalysis(data.nlp_analysis);
     }
     
-    // Update overall category
-    const category = data.briefing.overall_category || 'UNKNOWN';
-    const categoryBadge = document.getElementById('overallCategory');
-    categoryBadge.textContent = category;
-    categoryBadge.className = `badge badge-${category.toLowerCase()}`;
-    
-    // Update briefing summary
-    const summaryDiv = document.getElementById('briefingSummary');
-    summaryDiv.innerHTML = generateBriefingSummaryHTML(data.briefing);
+    // Traditional briefing section removed - no need to update category badge
     
     // Create visualizations
     if (data.visualizations) {
@@ -212,10 +204,14 @@ function displayBriefingResults(data) {
     // Display detailed airport weather
     displayAirportDetails(data.weather_data, data.airports);
     
+    // Display route information
+    if (data.route_info) {
+        displayRouteInfo(data.route_info);
+    }
+    
     // Scroll to results
     briefingResults.scrollIntoView({ behavior: 'smooth' });
 }
-
 function displayNLPAnalysis(nlpData) {
     // Display executive summary
     const executiveSummary = document.getElementById('executiveSummary');
@@ -270,56 +266,7 @@ function displayNLPAnalysis(nlpData) {
         pilotRecommendations.innerHTML = '<p class="text-muted">No specific recommendations at this time.</p>';
     }
     
-    // Display phase guidance
-    const phaseGuidance = document.getElementById('phaseGuidance');
-    if (nlpData.phase_guidance) {
-        const phases = ['pre_flight', 'departure', 'enroute', 'arrival'];
-        const phaseNames = {
-            'pre_flight': 'Pre-Flight',
-            'departure': 'Departure',
-            'enroute': 'En Route',
-            'arrival': 'Arrival'
-        };
-        const phaseIcons = {
-            'pre_flight': 'fas fa-clipboard-check',
-            'departure': 'fas fa-plane-departure',
-            'enroute': 'fas fa-route',
-            'arrival': 'fas fa-plane-arrival'
-        };
-        
-        let phaseHTML = '<div class="row">';
-        phases.forEach(phase => {
-            const guidance = nlpData.phase_guidance[phase];
-            if (guidance && guidance.length > 0) {
-                phaseHTML += `
-                    <div class="col-md-6 mb-3">
-                        <div class="card h-100">
-                            <div class="card-header py-2">
-                                <h6 class="mb-0">
-                                    <i class="${phaseIcons[phase]} me-2"></i>${phaseNames[phase]}
-                                </h6>
-                            </div>
-                            <div class="card-body py-2">
-                                <ul class="list-unstyled mb-0">
-                                    ${guidance.map(item => `
-                                        <li class="mb-1">
-                                            <i class="fas fa-check-circle text-success me-2"></i>
-                                            <small>${item}</small>
-                                        </li>
-                                    `).join('')}
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-        });
-        phaseHTML += '</div>';
-        
-        phaseGuidance.innerHTML = phaseHTML || '<p class="text-muted">No phase-specific guidance available.</p>';
-    } else {
-        phaseGuidance.innerHTML = '<p class="text-muted">No phase-specific guidance available.</p>';
-    }
+    // Phase guidance removed as requested
 }
 
 function getRiskBadgeClass(riskLevel) {
@@ -409,6 +356,20 @@ function generateIndividualWeatherHTML(data, airportCode) {
     
     if (data.pirep && data.pirep.length > 0) {
         html += generatePIREPHTML(data.pirep);
+    } else {
+        html += `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6><i class="fas fa-plane"></i> PIREPs (Pilot Reports)</h6>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning py-2">
+                        <i class="fas fa-info-circle me-2"></i>
+                        No recent pilot reports available for this airport. PIREPs are voluntary reports from pilots and may not always be available.
+                    </div>
+                </div>
+            </div>
+        `;
     }
     
     if (data.analysis) {
@@ -465,6 +426,9 @@ function generateMETARHTML(metar) {
 }
 
 function generateTAFHTML(taf) {
+    // Parse TAF for summary
+    const summary = parseTAFSummary(taf.raw_text || '');
+    
     return `
         <div class="card mb-3">
             <div class="card-header">
@@ -472,16 +436,71 @@ function generateTAFHTML(taf) {
             </div>
             <div class="card-body">
                 <div class="weather-metric">
-                    <span class="metric-label">Raw Text:</span>
-                    <code class="metric-value">${taf.raw_text || 'N/A'}</code>
+                    <span class="metric-label">Forecast Summary:</span>
+                    <div class="metric-value">
+                        <div class="alert alert-info py-2 mb-2">
+                            ${summary}
+                        </div>
+                    </div>
                 </div>
                 <div class="weather-metric">
                     <span class="metric-label">Valid Period:</span>
                     <span class="metric-value">${formatDateTime(taf.valid_time_from)} - ${formatDateTime(taf.valid_time_to)}</span>
                 </div>
+                <div class="weather-metric">
+                    <span class="metric-label">Raw Text:</span>
+                    <code class="metric-value">${taf.raw_text || 'N/A'}</code>
+                </div>
             </div>
         </div>
     `;
+}
+
+function parseTAFSummary(rawTAF) {
+    if (!rawTAF) return 'No forecast data available';
+    
+    const taf = rawTAF.toUpperCase();
+    let summary = [];
+    
+    // Check for weather phenomena
+    if (taf.includes('TS')) {
+        summary.push('⛈️ Thunderstorms forecast');
+    }
+    if (taf.includes('RA') || taf.includes('SN')) {
+        summary.push('🌧️ Precipitation expected');
+    }
+    if (taf.includes('FG') || taf.includes('BR')) {
+        summary.push('🌫️ Fog/mist conditions');
+    }
+    if (taf.includes('TEMPO')) {
+        summary.push('⏱️ Temporary conditions expected');
+    }
+    if (taf.includes('PROB')) {
+        summary.push('📊 Probability conditions forecast');
+    }
+    if (taf.includes('BECMG')) {
+        summary.push('🔄 Changing conditions expected');
+    }
+    
+    // Check for wind information
+    const windMatch = taf.match(/(\d{3})(\d{2,3})(G\d{2,3})?KT/);
+    if (windMatch) {
+        const windDir = windMatch[1];
+        const windSpeed = windMatch[2];
+        const gust = windMatch[3] ? windMatch[3].replace('G', '') : null;
+        
+        if (gust && parseInt(gust) > 25) {
+            summary.push(`💨 Strong wind gusts to ${gust} knots`);
+        } else if (parseInt(windSpeed) > 20) {
+            summary.push(`💨 Strong winds ${windSpeed} knots`);
+        }
+    }
+    
+    if (summary.length === 0) {
+        summary.push('☀️ Generally favorable conditions forecast');
+    }
+    
+    return summary.join('<br>');
 }
 
 function generatePIREPHTML(pireps) {
@@ -617,49 +636,80 @@ function displayAirportDetails(weatherData, airports) {
 }
 
 function createWindChart(chartData) {
+    const container = document.getElementById('windChart');
+    if (!container) {
+        console.error('Wind chart container not found');
+        return;
+    }
+    
     if (chartData && !chartData.error) {
         try {
             const plotData = JSON.parse(chartData);
             Plotly.newPlot('windChart', plotData.data, plotData.layout, {responsive: true});
-        } catch (e) {
-            document.getElementById('windChart').innerHTML = '<p class="text-muted">Error loading wind chart</p>';
+            console.log('Wind chart created successfully');
+        } catch (error) {
+            console.error('Error creating wind chart:', error);
+            container.innerHTML = '<div class="alert alert-warning">Error loading wind chart</div>';
         }
     } else {
-        document.getElementById('windChart').innerHTML = '<p class="text-muted">No wind data available</p>';
+        container.innerHTML = '<div class="alert alert-info">No wind data available</div>';
     }
 }
 
 function createVisibilityChart(chartData) {
+    const container = document.getElementById('visibilityChart');
+    if (!container) {
+        console.error('Visibility chart container not found');
+        return;
+    }
+    
     if (chartData && !chartData.error) {
         try {
             const plotData = JSON.parse(chartData);
             Plotly.newPlot('visibilityChart', plotData.data, plotData.layout, {responsive: true});
-        } catch (e) {
-            document.getElementById('visibilityChart').innerHTML = '<p class="text-muted">Error loading visibility chart</p>';
+            console.log('Visibility chart created successfully');
+        } catch (error) {
+            console.error('Error creating visibility chart:', error);
+            container.innerHTML = '<div class="alert alert-warning">Error loading visibility chart</div>';
         }
     } else {
-        document.getElementById('visibilityChart').innerHTML = '<p class="text-muted">No visibility data available</p>';
+        container.innerHTML = '<div class="alert alert-info">No visibility data available</div>';
     }
 }
 
 function createRouteMap(mapData) {
+    const container = document.getElementById('routeMap');
+    if (!container) {
+        console.error('Route map container not found');
+        return;
+    }
+    
     if (mapData && !mapData.includes('Error')) {
-        document.getElementById('routeMap').innerHTML = mapData;
+        container.innerHTML = mapData;
+        console.log('Route map created successfully');
     } else {
-        document.getElementById('routeMap').innerHTML = '<p class="text-muted">Error loading route map</p>';
+        container.innerHTML = '<div class="alert alert-warning">Error loading route map</div>';
     }
 }
 
 function createWeatherTimeline(chartData) {
+    const container = document.getElementById('weatherTimeline');
+    if (!container) {
+        console.error('Weather timeline container not found');
+        return;
+    }
+    
     if (chartData && !chartData.error) {
         try {
             const plotData = JSON.parse(chartData);
             Plotly.newPlot('weatherTimeline', plotData.data, plotData.layout, {responsive: true});
-        } catch (e) {
-            document.getElementById('weatherTimeline').innerHTML = '<p class="text-muted">Error loading weather timeline</p>';
+            console.log('Weather timeline created successfully');
+        } catch (error) {
+            console.error('Error creating weather timeline:', error);
+            container.innerHTML = '<div class="alert alert-warning">Error loading weather timeline</div>';
         }
     } else {
-        document.getElementById('weatherTimeline').innerHTML = '<p class="text-muted">No timeline data available</p>';
+        container.innerHTML = '<div class="alert alert-info">No timeline data available</div>';
     }
 }
 
@@ -741,6 +791,32 @@ function hideLoading() {
     document.getElementById('loadingSpinner').classList.add('d-none');
 }
 
+function showErrorMessage(message) {
+    // Remove any existing error messages
+    const existingError = document.querySelector('.error-alert');
+    if (existingError) {
+        existingError.remove();
+    }
+    
+    // Create error message
+    const errorHTML = `
+        <div class="alert alert-danger alert-dismissible fade show error-alert" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Error:</strong> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    `;
+    
+    // Insert error message at the top of the main content
+    const mainContent = document.querySelector('.container-fluid');
+    if (mainContent) {
+        mainContent.insertAdjacentHTML('afterbegin', errorHTML);
+        
+        // Scroll to error message
+        document.querySelector('.error-alert').scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
 function hideResults() {
     document.getElementById('briefingResults').classList.add('d-none');
     document.getElementById('individualResults').classList.add('d-none');
@@ -777,4 +853,36 @@ function loadSampleData() {
             <p class="small text-muted mb-0">Enter your flight details to get comprehensive weather analysis</p>
         </div>
     `;
+}
+
+function displayRouteInfo(routeInfo) {
+    // Find a good place to display route info - let's add it to the NLP section
+    const executiveSummary = document.getElementById('executiveSummary');
+    if (executiveSummary) {
+        // Remove any existing route info first
+        const existingRouteInfo = document.querySelector('.route-info-alert');
+        if (existingRouteInfo) {
+            existingRouteInfo.remove();
+        }
+        
+        const routeInfoHTML = `
+            <div class="alert alert-success mb-3 route-info-alert">
+                <h6><i class="fas fa-route"></i> Route Information</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>Distance:</strong> ${routeInfo.total_distance_nm} nautical miles<br>
+                        <strong>Route:</strong> ${routeInfo.departure_airport} → ${routeInfo.arrival_airport}
+                        ${routeInfo.waypoints_count > 0 ? ` (${routeInfo.waypoints_count} waypoints)` : ''}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Current Time (UTC):</strong> ${routeInfo.current_utc_time}<br>
+                        <strong>Analysis Generated:</strong> Just now
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Insert route info before the executive summary
+        executiveSummary.insertAdjacentHTML('beforebegin', routeInfoHTML);
+    }
 }

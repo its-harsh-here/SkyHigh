@@ -221,13 +221,15 @@ class WeatherAnalyzer:
         """Determine overall weather category based on severity score and flight category"""
         flight_cat = metar_data.get('flight_category', 'UNKNOWN')
         
-        # Use flight category as primary indicator
-        if flight_cat == 'VFR' and severity_score <= 2:
+        # Use flight category as primary indicator with proper mapping
+        if flight_cat == 'VFR' and severity_score <= 1:
             return 'CLEAR'
-        elif flight_cat in ['MVFR', 'VFR'] and severity_score <= 5:
+        elif flight_cat == 'MVFR' or (flight_cat == 'VFR' and severity_score > 1):
             return 'SIGNIFICANT'
-        else:
+        elif flight_cat in ['IFR', 'LIFR'] or severity_score >= 4:
             return 'SEVERE'
+        else:
+            return 'SIGNIFICANT'  # Default for uncertain cases
     
     def _generate_summary(self, analysis: Dict, metar_data: Dict) -> str:
         """Generate human-readable weather summary"""
@@ -376,3 +378,147 @@ class WeatherAnalyzer:
         recommendations.append("Review current PIREPs for route conditions")
         
         return recommendations
+    
+    def analyze_combined_weather_data(self, airport_data: Dict) -> Dict[str, Any]:
+        """
+        Analyze combined weather data from METAR, TAF, and PIREP
+        
+        Args:
+            airport_data (dict): All weather data for an airport
+            
+        Returns:
+            dict: Combined analysis considering all data sources
+        """
+        analysis = {
+            'category': 'CLEAR',
+            'severity_score': 0,
+            'sources_used': [],
+            'combined_factors': [],
+            'flight_category': 'UNKNOWN',
+            'summary': '',
+            'key_factors': [],
+            'hazards': [],
+            'recommendations': []
+        }
+        
+        # Start with METAR analysis if available
+        metar = airport_data.get('metar')
+        if metar:
+            metar_analysis = self.analyze_metar(metar)
+            # Keep the original METAR analysis as base
+            analysis.update(metar_analysis)
+            analysis['sources_used'].append('METAR')
+            # Store original category before modifications
+            original_category = metar_analysis.get('category', 'CLEAR')
+        
+        # Enhance with TAF data if available
+        taf = airport_data.get('taf')
+        if taf:
+            taf_factors = self._analyze_taf_data(taf)
+            analysis['combined_factors'].extend(taf_factors)
+            analysis['sources_used'].append('TAF')
+            
+            # Increase severity if TAF shows deteriorating conditions
+            if any('deteriorating' in factor.lower() or 'thunderstorm' in factor.lower() for factor in taf_factors):
+                analysis['severity_score'] += 2
+            elif any('forecast' in factor.lower() for factor in taf_factors):
+                analysis['severity_score'] += 1
+        
+        # Enhance with PIREP data if available
+        pireps = airport_data.get('pirep', [])
+        if pireps and len(pireps) > 0:
+            pirep_factors = self._analyze_pirep_data(pireps)
+            analysis['combined_factors'].extend(pirep_factors)
+            analysis['sources_used'].append('PIREP')
+            
+            # Increase severity based on pilot reports
+            if any('turbulence' in factor.lower() or 'icing' in factor.lower() for factor in pirep_factors):
+                analysis['severity_score'] += 2
+            elif any('smooth' in factor.lower() for factor in pirep_factors):
+                analysis['severity_score'] -= 1  # Good pilot reports can reduce severity
+        
+        # Use time-appropriate conditions if available
+        time_conditions = airport_data.get('time_appropriate_conditions')
+        primary_source = airport_data.get('primary_source', 'METAR')
+        
+        if time_conditions and primary_source == 'TAF':
+            analysis['combined_factors'].append(f"Using forecast data for planned departure time")
+            analysis['time_aware'] = True
+        
+        # Recalculate category based on combined severity, but respect original METAR category
+        if metar:
+            # Don't downgrade from original METAR category unless we have strong evidence
+            if analysis['severity_score'] >= 6:
+                analysis['category'] = 'SEVERE'
+            elif analysis['severity_score'] >= 3 or original_category == 'SIGNIFICANT':
+                analysis['category'] = 'SIGNIFICANT'
+            elif original_category == 'SEVERE':
+                analysis['category'] = 'SEVERE'
+            else:
+                analysis['category'] = original_category
+        else:
+            # Fallback logic when no METAR
+            if analysis['severity_score'] >= 6:
+                analysis['category'] = 'SEVERE'
+            elif analysis['severity_score'] >= 3:
+                analysis['category'] = 'SIGNIFICANT'
+            else:
+                analysis['category'] = 'CLEAR'
+        
+        # Update summary to reflect all sources
+        sources_str = ', '.join(analysis['sources_used']) if analysis['sources_used'] else 'Limited data'
+        analysis['summary'] = f"{analysis['summary']} (Sources: {sources_str})"
+        
+        return analysis
+    
+    def _analyze_taf_data(self, taf):
+        """Analyze TAF data for additional weather factors"""
+        factors = []
+        
+        if not taf:
+            return factors
+        
+        raw_text = taf.get('raw_text', '').upper()
+        
+        # Look for weather phenomena in TAF
+        if 'TS' in raw_text:
+            factors.append('Thunderstorms forecast')
+        if 'FG' in raw_text or 'BR' in raw_text:
+            factors.append('Fog/mist forecast')
+        if 'RA' in raw_text or 'SN' in raw_text:
+            factors.append('Precipitation forecast')
+        if 'TEMPO' in raw_text:
+            factors.append('Temporary conditions expected')
+        if 'PROB' in raw_text:
+            factors.append('Probability conditions forecast')
+        if 'BECMG' in raw_text:
+            factors.append('Conditions becoming different')
+        if any(wind in raw_text for wind in ['G25', 'G30', 'G35']):
+            factors.append('Strong wind gusts forecast')
+        
+        return factors
+    
+    def _analyze_pirep_data(self, pireps):
+        """Analyze PIREP data for pilot-reported conditions"""
+        factors = []
+        
+        for pirep in pireps:
+            if not pirep:
+                continue
+                
+            raw_text = pirep.get('raw_text', '').upper()
+            
+            if 'TURB' in raw_text or 'ROUGH' in raw_text:
+                factors.append('Turbulence reported by pilots')
+            if 'ICE' in raw_text or 'ICING' in raw_text:
+                factors.append('Icing conditions reported')
+            if 'SMOOTH' in raw_text:
+                factors.append('Smooth conditions reported')
+            if 'CLOUD' in raw_text or 'LAYER' in raw_text:
+                factors.append('Cloud conditions reported by pilots')
+            if 'CHOP' in raw_text:
+                factors.append('Light chop reported')
+            if 'RIDE' in raw_text:
+                factors.append('Ride conditions reported by pilots')
+        
+        return factors
