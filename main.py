@@ -216,7 +216,7 @@ class SimpleNLPProcessor:
             return flight_plan
     
     def generate_risk_assessment(self, timeline: List[Dict]) -> Dict:
-        """Generate automated risk assessment with scoring - REMOVED risk_factors"""
+        """Generate automated risk assessment with scoring"""
         try:
             severity_scores = {'Clear': 1, 'Significant': 3, 'Severe': 5}
             
@@ -776,7 +776,7 @@ class WeatherProcessor:
         return metar
 
     def create_timeline_analysis(self, flight_segments: List[Dict], weather_data: Dict) -> List[Dict]:
-        """Create detailed timeline weather analysis for flight path"""
+        """Create detailed timeline weather analysis for flight path with enhanced data for charts"""
         timeline = []
         
         for segment in flight_segments:
@@ -804,13 +804,18 @@ class WeatherProcessor:
                     'lon': lon,
                     'conditions': conditions,
                     'severity': conditions['severity'],
-                    'flight_segment': f"{segment['from']} -> {segment['to']}"
+                    'flight_segment': f"{segment['from']} -> {segment['to']}",
+                    # Enhanced data for additional charts
+                    'wind_speed': conditions.get('wind_speed', 0),
+                    'wind_gust': conditions.get('wind_gust', 0),
+                    'visibility': conditions.get('visibility', 10),
+                    'temperature': conditions.get('temperature', 15)
                 })
         
         return timeline
 
     def get_conditions_for_location_time(self, lat: float, lon: float, time: datetime, weather_data: Dict) -> Dict:
-        """Get weather conditions for specific location and time - FIXED NEAREST STATION"""
+        """Get weather conditions for specific location and time with enhanced data"""
         nearest_metar = self.find_nearest_weather_data(lat, lon, weather_data.get('metars', []))
         
         now_utc = datetime.now(timezone.utc)
@@ -840,7 +845,7 @@ class WeatherProcessor:
         else:
             severity = base_severity
         
-        # FIX: Get proper nearest station from real METAR or use a better fallback
+        # Get proper nearest station from real METAR or use a better fallback
         nearest_station_id = None
         if nearest_metar and nearest_metar.get('icaoId'):
             nearest_station_id = nearest_metar.get('icaoId')
@@ -856,6 +861,21 @@ class WeatherProcessor:
                         min_distance = distance
                         nearest_station_id = metar['icaoId']
         
+        # Extract visibility value for chart
+        visibility_val = simulated_weather.get('visib', 10)
+        if isinstance(visibility_val, str):
+            if 'SM' in visibility_val:
+                vis_match = re.findall(r'[\d.]+', visibility_val)
+                visibility_val = float(vis_match[0]) if vis_match else 10
+            elif visibility_val == '9999' or visibility_val == 'CAVOK':
+                visibility_val = 10
+            elif visibility_val.isdigit():
+                visibility_val = float(visibility_val) / 1609  # Convert meters to miles
+            else:
+                visibility_val = 10
+        else:
+            visibility_val = float(visibility_val) if visibility_val else 10
+        
         return {
             'severity': severity,
             'condition': condition,
@@ -863,7 +883,12 @@ class WeatherProcessor:
             'hazards': all_hazards,
             'pirep_count': len(pirep_reports),
             'nearest_station': nearest_station_id or 'Unknown',
-            'natural_language': simulated_weather.get('natural_language', '')
+            'natural_language': simulated_weather.get('natural_language', ''),
+            # Enhanced data for additional charts
+            'wind_speed': simulated_weather.get('wspd', 0) or 0,
+            'wind_gust': simulated_weather.get('wgst', 0) or 0,
+            'visibility': visibility_val,
+            'temperature': simulated_weather.get('temp', 15) or 15
         }
 
     def simulate_hazards_for_conditions(self, weather: Dict, weather_data: Dict) -> List[str]:
@@ -903,7 +928,7 @@ class WeatherProcessor:
         return warnings[:1]
 
     def find_nearest_weather_data(self, lat: float, lon: float, weather_list: List[Dict]) -> Optional[Dict]:
-        """Find nearest weather station to given coordinates - FIXED"""
+        """Find nearest weather station to given coordinates"""
         nearest = None
         min_distance = float('inf')
         
@@ -1085,7 +1110,8 @@ def enhanced_flight_plan():
                 'cruise_speed': cruise_speed,
                 'total_distance': sum(s['distance_nm'] for s in flight_segments),
                 'total_flight_time': sum(s['flight_time_hours'] for s in flight_segments),
-                'overall_severity': overall_severity
+                'overall_severity': overall_severity,
+                'risk_assessment': risk_assessment  # Add risk assessment to route
             },
             'flight_segments': [{
                 'from': s['from'],
