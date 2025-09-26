@@ -1003,6 +1003,17 @@
                 const timelineItem = document.createElement('div');
                 timelineItem.className = `timeline-item ${item.severity.toLowerCase()}`;
 
+                const buttonsHtml = `
+                    <div class="timeline-buttons">
+                        ${item.conditions.raw_metar ? 
+                            `<button class="btn btn-secondary btn-small" onclick="showRawDataModal('Raw METAR Data - ${item.conditions.nearest_station}', \`${item.conditions.raw_metar}\`)">Show Raw METAR</button>` : ''}
+                        ${item.conditions.raw_taf ? 
+                            `<button class="btn btn-secondary btn-small" onclick="showRawDataModal('Raw TAF Data - ${item.conditions.nearest_station}', \`${item.conditions.raw_taf}\`)">Show Raw TAF</button>` : ''}
+                        ${item.conditions.nearest_station ? 
+                            `<button class="btn btn-secondary btn-small" onclick="showPirepModal('${item.conditions.nearest_station}')">Pilot Reports</button>` : ''}
+                    </div>
+                `;
+
                 // Enhanced with NLP insights
                 let nlpInsights = '';
                 if (item.conditions.natural_language) {
