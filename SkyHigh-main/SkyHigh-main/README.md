@@ -1,3 +1,0 @@
-# SkyHigh
-hi
-s
